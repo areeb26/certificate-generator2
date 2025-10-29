@@ -8,6 +8,16 @@ import sqlite3
 import os
 from pydantic import BaseModel
 
+# Attempt to import shaping/bidi libraries at module load so missing deps fail early
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    HAS_ARABIC = True
+except Exception:
+    arabic_reshaper = None
+    get_display = None
+    HAS_ARABIC = False
+
 app = FastAPI(title="Certificate Generator API")
 
 # Enable CORS
@@ -148,9 +158,14 @@ async def debug_fonts():
         "cwd": os.getcwd(),
         "file_location": __file__
     }
+
+    # Report whether arabic/urdu shaping libs are available
+    info["has_arabic_libraries"] = HAS_ARABIC
     
     if os.path.exists(font_dir):
         info["files"] = os.listdir(font_dir)
+        # Also provide absolute file paths and existence
+        info["files_detail"] = {f: os.path.exists(os.path.join(font_dir, f)) for f in info["files"]}
     
     # Check system fonts
     system_paths = [
@@ -218,35 +233,33 @@ async def generate_certificate(template_id: int, name: str = Query(...)):
         if font is None:
             font = ImageFont.load_default()
         
-        # For RTL languages (Urdu), we need special handling
+        # For RTL languages (Urdu), we need special handling (shaping + bidi)
         if language == 'ur':
-            # Urdu is RTL, so we need to handle text direction
-            try:
-                from arabic_reshaper import reshape
-                from bidi.algorithm import get_display
-                
-                # Reshape and reorder the text for proper RTL display
-                reshaped_text = reshape(name)
-                bidi_text = get_display(reshaped_text)
-                display_name = bidi_text
-            except:
-                # If libraries not available, use text as-is
-                display_name = name
+            if not HAS_ARABIC:
+                # Fail fast with clear message so deployers know to install dependencies
+                raise HTTPException(status_code=500, detail=(
+                    "Missing python packages for Arabic/Urdu shaping. "
+                    "Please install 'arabic-reshaper' and 'python-bidi' and restart the server."))
+
+            # Reshape and reorder the text for proper RTL display
+            reshaped_text = arabic_reshaper.reshape(name)
+            display_name = get_display(reshaped_text)
         else:
             display_name = name
-        
-        # Calculate position based on alignment
+
+        # Calculate position based on alignment. Use textbbox without anchor for consistent measurements.
+        bbox = draw.textbbox((0, 0), display_name, font=font)
+        text_width = bbox[2] - bbox[0]
+
         if alignment == 'center':
-            bbox = draw.textbbox((0, 0), display_name, font=font, anchor='la')
-            text_width = bbox[2] - bbox[0]
-            text_x = text_x - text_width / 2
+            final_x = text_x - text_width / 2
         elif alignment == 'right':
-            bbox = draw.textbbox((0, 0), display_name, font=font, anchor='la')
-            text_width = bbox[2] - bbox[0]
-            text_x = text_x - text_width
-        
-        # Draw text with proper baseline alignment
-        draw.text((text_x, text_y), display_name, fill=color, font=font, anchor='la')
+            final_x = text_x - text_width
+        else:
+            final_x = text_x
+
+        # Draw text (no anchor). For Urdu (RTL) we've already reshaped+reordered the characters.
+        draw.text((final_x, text_y), display_name, fill=color, font=font)
         
         # Return PNG
         img_bytes = io.BytesIO()
