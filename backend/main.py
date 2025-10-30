@@ -60,18 +60,27 @@ async def root():
 
 @app.post("/api/template")
 async def create_template(config: TemplateConfig):
-    template_id = template_db.create_template(
-        name=config.name,
-        image_base64=config.image_base64,
-        text_x=config.text_position['x'],
-        text_y=config.text_position['y'],
-        font=config.font,
-        font_size=config.font_size,
-        alignment=config.alignment,
-        color=config.color,
-        language=config.language
-    )
-    return {"template_id": template_id}
+    try:
+        template_id = template_db.create_template(
+            name=config.name,
+            image_base64=config.image_base64,
+            text_x=config.text_position['x'],
+            text_y=config.text_position['y'],
+            font=config.font,
+            font_size=config.font_size,
+            alignment=config.alignment,
+            color=config.color,
+            language=config.language
+        )
+
+        if template_id is None:
+            raise HTTPException(status_code=500, detail="Failed to create template: No ID returned from database")
+
+        print(f"Template created successfully with ID: {template_id}")
+        return {"template_id": template_id}
+    except Exception as e:
+        print(f"Error creating template: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
 
 @app.get("/api/templates")
 async def list_templates():

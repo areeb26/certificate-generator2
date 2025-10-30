@@ -169,7 +169,18 @@ const CertificateGenerator = () => {
           language: selectedTemplate.config.language
         })
       });
+
       const data = await response.json();
+
+      // Check if response was successful
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to save template');
+      }
+
+      // Check if template_id exists in response
+      if (!data.template_id) {
+        throw new Error('Server did not return a template ID');
+      }
 
       // Update the template ID to the backend-generated ID
       const updatedTemplate = {
@@ -183,7 +194,7 @@ const CertificateGenerator = () => {
       setTimeout(() => setSavedMessage(''), 4000);
     } catch (error) {
       console.error('Save error:', error);
-      setSavedMessage(`✗ Error: Make sure API is running at ${API_URL}`);
+      setSavedMessage(`✗ Error: ${error.message || 'Make sure API is running at ' + API_URL}`);
       setTimeout(() => setSavedMessage(''), 5000);
     }
   };
