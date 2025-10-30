@@ -29,7 +29,10 @@ app = FastAPI(title="Certificate Generator API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://certificate-generator2-2.onrender.com"],
+    allow_origins=[
+        "https://certificate-generator2-2.onrender.com",
+        "https://certificate-generator2-gilt.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
