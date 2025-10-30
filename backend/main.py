@@ -1,26 +1,32 @@
+print("MAIN.PY FILE LOADED - TESTING PRINT")
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from PIL import Image, ImageDraw, ImageFont
+from PIL.ImageFont import FreeTypeFont
 import io
 import base64
-import sqlite3
 import os
 from pydantic import BaseModel
+from db import db, template_db
 
-# Attempt to import shaping/bidi libraries at module load so missing deps fail early
 try:
-    import arabic_reshaper
+    from arabic_reshaper import reshape
     from bidi.algorithm import get_display
-    HAS_ARABIC = True
-except Exception:
-    arabic_reshaper = None
-    get_display = None
-    HAS_ARABIC = False
+    import arabic_reshaper
+    URDU_SUPPORT = True
+except ImportError:
+    URDU_SUPPORT = False
+
+# Check for libraqm support (enables complex text layout for Nastaliq fonts)
+try:
+    from PIL import features
+    LIBRAQM_AVAILABLE = features.check('raqm')
+except:
+    LIBRAQM_AVAILABLE = False
 
 app = FastAPI(title="Certificate Generator API")
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,33 +34,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Database path
-DB_PATH = os.getenv('DATABASE_PATH', 'certificates.db')
-
-# Initialize database
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS templates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            image_base64 TEXT NOT NULL,
-            text_x REAL NOT NULL,
-            text_y REAL NOT NULL,
-            font TEXT NOT NULL,
-            font_size INTEGER NOT NULL,
-            alignment TEXT NOT NULL,
-            color TEXT NOT NULL,
-            language TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-init_db()
 
 class TemplateConfig(BaseModel):
     name: str
@@ -68,206 +47,191 @@ class TemplateConfig(BaseModel):
 
 @app.get("/")
 async def root():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT COUNT(*) FROM templates')
-    count = c.fetchone()[0]
-    conn.close()
+    count = template_db.get_template_count()
+    db_info = db.get_database_info()
     return {
-        "message": "Certificate Generator API",
-        "status": "running",
+        "message": "Certificate API",
+        "urdu_support": URDU_SUPPORT,
+        "libraqm_available": LIBRAQM_AVAILABLE,
+        "urdu_font": "Nastaliq" if LIBRAQM_AVAILABLE else "Tahoma",
         "templates_count": count,
-        "endpoints": {
-            "create_template": "POST /api/template",
-            "list_templates": "GET /api/templates",
-            "get_template": "GET /api/template/{id}",
-            "generate_certificate": "GET /api/certificate/{id}?name=YourName",
-            "debug_fonts": "GET /api/debug/fonts"
-        }
+        "database": db_info["type"]
     }
 
 @app.post("/api/template")
 async def create_template(config: TemplateConfig):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute('''
-        INSERT INTO templates (name, image_base64, text_x, text_y, font, font_size, alignment, color, language)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        config.name,
-        config.image_base64,
-        config.text_position['x'],
-        config.text_position['y'],
-        config.font,
-        config.font_size,
-        config.alignment,
-        config.color,
-        config.language
-    ))
-    
-    template_id = c.lastrowid
-    conn.commit()
-    conn.close()
-    
-    return {"template_id": template_id, "message": "Template saved successfully"}
+    template_id = template_db.create_template(
+        name=config.name,
+        image_base64=config.image_base64,
+        text_x=config.text_position['x'],
+        text_y=config.text_position['y'],
+        font=config.font,
+        font_size=config.font_size,
+        alignment=config.alignment,
+        color=config.color,
+        language=config.language
+    )
+    return {"template_id": template_id}
 
 @app.get("/api/templates")
 async def list_templates():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT id, name, language, created_at FROM templates')
-    templates = [
-        {"id": row[0], "name": row[1], "language": row[2], "created_at": row[3]}
-        for row in c.fetchall()
-    ]
-    conn.close()
-    return {"templates": templates, "count": len(templates)}
+    templates = template_db.list_templates()
+    return {"templates": templates}
 
 @app.get("/api/template/{template_id}")
 async def get_template(template_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
-    row = c.fetchone()
-    conn.close()
-
-    if not row:
+    template = template_db.get_template(template_id)
+    if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-
     return {
-        "id": row[0],
-        "name": row[1],
-        "image_base64": row[2],
-        "text_position": {"x": row[3], "y": row[4]},
-        "font": row[5],
-        "font_size": row[6],
-        "alignment": row[7],
-        "color": row[8],
-        "language": row[9]
+        "id": template["id"],
+        "name": template["name"],
+        "image_base64": template["image_base64"],
+        "text_position": {"x": template["text_x"], "y": template["text_y"]},
+        "font": template["font"],
+        "font_size": template["font_size"],
+        "alignment": template["alignment"],
+        "color": template["color"],
+        "language": template["language"]
     }
 
 @app.get("/api/debug/fonts")
 async def debug_fonts():
-    """Debug endpoint to check font availability"""
     font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
-    info = {
-        "font_dir": font_dir,
-        "exists": os.path.exists(font_dir),
-        "files": [],
-        "cwd": os.getcwd(),
-        "file_location": __file__
-    }
-
-    # Report whether arabic/urdu shaping libs are available
-    info["has_arabic_libraries"] = HAS_ARABIC
-    
-    if os.path.exists(font_dir):
-        info["files"] = os.listdir(font_dir)
-        # Also provide absolute file paths and existence
-        info["files_detail"] = {f: os.path.exists(os.path.join(font_dir, f)) for f in info["files"]}
-    
-    # Check system fonts
-    system_paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-    ]
-    info["system_fonts"] = {path: os.path.exists(path) for path in system_paths}
-    
+    info = {"font_dir": font_dir, "exists": os.path.exists(font_dir), "files": os.listdir(font_dir) if os.path.exists(font_dir) else [], "urdu_support": URDU_SUPPORT}
     return info
 
 @app.get("/api/certificate/{template_id}")
 async def generate_certificate(template_id: int, name: str = Query(...)):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT * FROM templates WHERE id = ?', (template_id,))
-    row = c.fetchone()
-    conn.close()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Template not found")
-    
     try:
-        image_base64 = row[2]
-        text_x, text_y = row[3], row[4]
-        font_name, font_size = row[5], row[6]
-        alignment, color = row[7], row[8]
-        language = row[9]
+        print("="*50)
+        print(f"Certificate generation started")
+        print(f"Template ID: {template_id}")
+        print(f"Name received (repr): {repr(name)}")
+        print("="*50)
+    except UnicodeEncodeError:
+        print("Certificate generation started (Unicode name)")
+
+    template = template_db.get_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    try:
+        image_base64 = template["image_base64"]
+        text_x, text_y = template["text_x"], template["text_y"]
+        font_size = template["font_size"]
+        alignment, color = template["alignment"], template["color"]
+        language = template["language"]
         
-        # Decode image
         image_data = base64.b64decode(image_base64.split(',')[1])
         image = Image.open(io.BytesIO(image_data))
         draw = ImageDraw.Draw(image)
         
-        # Load font - use fonts from fonts directory
         font = None
         font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
         
-        font_paths = []
+        # For Urdu: use Nastaliq fonts if libraqm available, otherwise use Tahoma
         if language == 'ur':
-            # Urdu font paths
-            font_paths = [
-                os.path.join(font_dir, 'NotoNastaliqUrdu-Regular.ttf'),
-                '/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf',
-            ]
+            if LIBRAQM_AVAILABLE:
+                # Use beautiful Nastaliq fonts with libraqm support
+                font_paths = [
+                    os.path.join(font_dir, 'Jameel Noori Nastaleeq.ttf'),
+                    os.path.join(font_dir, 'NotoNastaliqUrdu-Regular.ttf'),
+                    'C:\\Windows\\Fonts\\tahoma.ttf',
+                ]
+            else:
+                # Use Tahoma (clean, professional, supports Arabic)
+                font_paths = [
+                    'C:\\Windows\\Fonts\\tahoma.ttf',
+                    'C:\\Windows\\Fonts\\tahomabd.ttf',  # Tahoma Bold
+                    os.path.join(font_dir, 'ARIAL.TTF'),
+                ]
         else:
-            # English font paths
             font_paths = [
                 os.path.join(font_dir, 'ARIAL.TTF'),
-                os.path.join(font_dir, 'Montserrat-Regular.ttf'),
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-                '/System/Library/Fonts/Helvetica.ttc',
+                os.path.join(font_dir, 'arial.ttf'),
             ]
         
-        # Try each font path
         for path in font_paths:
-            try:
-                if os.path.exists(path):
-                    font = ImageFont.truetype(path, font_size)
-                    break
-            except Exception as e:
-                continue
-        
-        # If all else fails, use default
+            if os.path.exists(path):
+                font = ImageFont.truetype(path, font_size)
+                try:
+                    print(f"Using font: {os.path.basename(path)}")
+                except:
+                    pass
+                break
+
         if font is None:
             font = ImageFont.load_default()
+            try:
+                print("Using default font (WARNING: may not support Urdu)")
+            except:
+                pass
         
-        # For RTL languages (Urdu), we need special handling (shaping + bidi)
-        if language == 'ur':
-            if not HAS_ARABIC:
-                # Fail fast with clear message so deployers know to install dependencies
-                raise HTTPException(status_code=500, detail=(
-                    "Missing python packages for Arabic/Urdu shaping. "
-                    "Please install 'arabic-reshaper' and 'python-bidi' and restart the server."))
+        # Debug: Print incoming name (safe for Windows console)
+        try:
+            print(f"Name type: {type(name)}")
+            print(f"Name repr: {repr(name)}")
+        except UnicodeEncodeError:
+            pass
+        
+        # For Urdu text processing with Tahoma font
+        if language == 'ur' and URDU_SUPPORT:
+            try:
+                # Reshape to get Arabic Presentation Forms
+                reshaped = reshape(name)
+                # Reverse for RTL display
+                display_name = get_display(reshaped)
 
-            # Reshape and reorder the text for proper RTL display
-            reshaped_text = arabic_reshaper.reshape(name)
-            display_name = get_display(reshaped_text)
+                try:
+                    print(f"Urdu text: reshaped and reversed with Tahoma")
+                except:
+                    pass
+            except Exception as e:
+                try:
+                    print(f"Urdu processing error: {repr(e)}")
+                except:
+                    pass
+                # Fallback: just reverse
+                display_name = name[::-1]
+        elif language == 'ur':
+            # No reshape/bidi libraries, just reverse
+            display_name = name[::-1]
+            try:
+                print("Urdu: simple reversal (libraries not available)")
+            except:
+                pass
         else:
             display_name = name
-
-        # Calculate position based on alignment. Use textbbox without anchor for consistent measurements.
-        bbox = draw.textbbox((0, 0), display_name, font=font)
-        text_width = bbox[2] - bbox[0]
-
-        if alignment == 'center':
-            final_x = text_x - text_width / 2
-        elif alignment == 'right':
-            final_x = text_x - text_width
-        else:
-            final_x = text_x
-
-        # Draw text (no anchor). For Urdu (RTL) we've already reshaped+reordered the characters.
-        draw.text((final_x, text_y), display_name, fill=color, font=font)
         
-        # Return PNG
+        # Calculate text width for alignment
+        bbox = draw.textbbox((0, 0), display_name, font=font, anchor='la')
+        text_width = bbox[2] - bbox[0]
+        
+        if alignment == 'center':
+            text_x = text_x - text_width / 2
+        elif alignment == 'right':
+            text_x = text_x - text_width
+        
+        # Draw text with proper rendering
+        if language == 'ur' and LIBRAQM_AVAILABLE:
+            # Use PIL's advanced text rendering with libraqm
+            try:
+                draw.text((text_x, text_y), name, fill=color, font=font, anchor='la',
+                         direction='rtl', language='ur', features=['liga', 'calt', 'ccmp', 'locl'])
+            except:
+                # Fallback if advanced features fail
+                draw.text((text_x, text_y), display_name, fill=color, font=font, anchor='la')
+        else:
+            # Simple drawing (for Tahoma with reshaped text)
+            draw.text((text_x, text_y), display_name, fill=color, font=font, anchor='la')
+        
         img_bytes = io.BytesIO()
         image.save(img_bytes, format='PNG')
         img_bytes.seek(0)
         
         return Response(content=img_bytes.getvalue(), media_type="image/png")
-        
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 

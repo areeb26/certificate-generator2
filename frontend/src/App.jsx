@@ -21,10 +21,13 @@ const CertificateGenerator = () => {
     { name: 'Georgia', value: 'Georgia, serif', lang: 'en' },
     { name: 'Verdana', value: 'Verdana, sans-serif', lang: 'en' },
     { name: 'Courier New', value: 'Courier New, monospace', lang: 'en' },
-    { name: 'Tahoma', value: 'Tahoma, sans-serif', lang: 'en' },
     { name: 'Trebuchet MS', value: 'Trebuchet MS, sans-serif', lang: 'en' },
     { name: 'Impact', value: 'Impact, sans-serif', lang: 'en' },
-    { name: 'Noto Nastaliq Urdu', value: '"Noto Nastaliq Urdu", serif', lang: 'ur' },
+    { name: 'Tahoma (Recommended)', value: 'Tahoma, sans-serif', lang: 'ur' },
+    { name: 'Arial', value: 'Arial, sans-serif', lang: 'ur' },
+    { name: 'Times New Roman', value: 'Times New Roman, serif', lang: 'ur' },
+    { name: 'Segoe UI', value: 'Segoe UI, sans-serif', lang: 'ur' },
+    { name: 'Calibri', value: 'Calibri, sans-serif', lang: 'ur' },
   ];
 
   const handleImageUpload = (e) => {
@@ -223,7 +226,7 @@ const CertificateGenerator = () => {
     }
   };
 
-  const drawCertificate = () => {
+    const drawCertificate = () => {
     if (!selectedTemplate || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -233,16 +236,24 @@ const CertificateGenerator = () => {
     canvas.height = img.naturalHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
-    const { textPosition, font, fontSize, alignment, color, language } = selectedTemplate.config;
-    ctx.direction = language === 'ur' ? 'rtl' : 'ltr';
+    const { textPosition, font, fontSize, alignment, color } = selectedTemplate.config;
+
+    // Simple text rendering - backend handles all RTL/Urdu processing
     ctx.font = `${fontSize}px ${font}`;
     ctx.fillStyle = color;
     ctx.textBaseline = 'top';
+
+    // Set text alignment
     if (alignment === 'center') ctx.textAlign = 'center';
     else if (alignment === 'right') ctx.textAlign = 'right';
     else ctx.textAlign = 'left';
+
+    // Draw text (backend handles reshape + bidi for Urdu)
     ctx.fillText(previewName, textPosition.x, textPosition.y);
   };
+
+  // Note: All Urdu text processing (reshape + bidi) is handled by the backend
+  // The frontend just displays a preview using browser fonts
 
   const downloadCertificate = () => {
     if (!canvasRef.current) return;
@@ -319,8 +330,6 @@ const CertificateGenerator = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-      <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet" />
-      
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between">
@@ -445,6 +454,7 @@ const CertificateGenerator = () => {
                     <button
                       onClick={() => {
                         updateConfig('language', 'ur');
+                        updateConfig('font', 'Tahoma, sans-serif');
                         setPreviewName('احمد علی');
                       }}
                       className={`py-2 px-4 rounded-lg transition ${
@@ -609,8 +619,12 @@ const CertificateGenerator = () => {
                     onChange={(e) => setPreviewName(e.target.value)}
                     placeholder={selectedTemplate.config.language === 'ur' ? 'نام درج کریں...' : 'Enter name...'}
                     dir={selectedTemplate.config.language === 'ur' ? 'rtl' : 'ltr'}
-                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    style={{ fontFamily: selectedTemplate.config.font }}
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-right"
+                    style={{ 
+                      fontFamily: selectedTemplate.config.font,
+                      textAlign: selectedTemplate.config.language === 'ur' ? 'right' : 'left',
+                      direction: selectedTemplate.config.language === 'ur' ? 'rtl' : 'ltr'
+                    }}
                   />
                 </div>
 
