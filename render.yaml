@@ -1,0 +1,39 @@
+# Render Blueprint for Certificate Generator
+# This file allows you to deploy both services with one click!
+
+services:
+  # Backend API Service
+  - type: web
+    name: certificate-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: DATABASE_TYPE
+        value: postgresql
+      - key: DATABASE_URL
+        sync: false  # You'll need to add this manually in Render dashboard
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    healthCheckPath: /
+
+  # Frontend Static Site
+  - type: web
+    name: certificate-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    plan: free
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: certificate-api
+          property: host
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
