@@ -1,46 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Download, Plus, Trash2, Eye, Settings, Copy, Save } from 'lucide-react';
 import { overlayHitBox, pointInHitBox } from './overlayHitBox.js';
-
-// ✅ Backend URLs from Environment Variables (with fallback support)
-const API_URLS = [
-  import.meta.env.VITE_API_URL_PRIMARY,
-  import.meta.env.VITE_API_URL_SECONDARY,
-  import.meta.env.VITE_API_URL, // legacy single-URL support
-].filter(Boolean);
-
-const getApiBases = () => {
-  // Default to localhost if nothing is configured (local dev)
-  if (API_URLS.length === 0) {
-    return ['http://localhost:8000'];
-  }
-  return API_URLS;
-};
-
-const getPrimaryApiUrl = () => getApiBases()[0];
-
-const fetchWithFallback = async (path, options = {}) => {
-  const bases = getApiBases();
-  let lastError = null;
-
-  for (const base of bases) {
-    try {
-      const response = await fetch(`${base}${path}`, options);
-      if (!response.ok) {
-        // Let caller handle non-2xx responses
-        return response;
-      }
-      return response;
-    } catch (error) {
-      lastError = error;
-      // Try next base URL
-    }
-  }
-
-  // If all backends failed at network level, throw last error
-  if (lastError) throw lastError;
-  throw new Error('All backend URLs failed');
-};
+import { fetchWithFallback, getPrimaryApiUrl, isPersistedTemplateId } from './apiBases.js';
 
 const CertificateGenerator = () => {
   const [templates, setTemplates] = useState([]);
@@ -248,25 +209,29 @@ const CertificateGenerator = () => {
   const saveTemplateToDB = async () => {
     if (!selectedTemplate) return;
     try {
-      const response = await fetchWithFallback('/api/template', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: selectedTemplate.name,
-          image_base64: selectedTemplate.image,
-          text_position: selectedTemplate.config.textPosition,
-          font: selectedTemplate.config.font,
-          font_size: selectedTemplate.config.fontSize,
-          alignment: selectedTemplate.config.alignment,
-          color: selectedTemplate.config.color,
-          language: selectedTemplate.config.language,
-          course_text_position: selectedTemplate.config.courseTextPosition,
-          course_font: selectedTemplate.config.courseFont,
-          course_font_size: selectedTemplate.config.courseFontSize,
-          course_alignment: selectedTemplate.config.courseAlignment,
-          course_color: selectedTemplate.config.courseColor,
-        })
-      });
+      const persisted = isPersistedTemplateId(selectedTemplate.id);
+      const response = await fetchWithFallback(
+        persisted ? `/api/template/${selectedTemplate.id}` : '/api/template',
+        {
+          method: persisted ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: selectedTemplate.name,
+            image_base64: selectedTemplate.image,
+            text_position: selectedTemplate.config.textPosition,
+            font: selectedTemplate.config.font,
+            font_size: selectedTemplate.config.fontSize,
+            alignment: selectedTemplate.config.alignment,
+            color: selectedTemplate.config.color,
+            language: selectedTemplate.config.language,
+            course_text_position: selectedTemplate.config.courseTextPosition,
+            course_font: selectedTemplate.config.courseFont,
+            course_font_size: selectedTemplate.config.courseFontSize,
+            course_alignment: selectedTemplate.config.courseAlignment,
+            course_color: selectedTemplate.config.courseColor,
+          }),
+        },
+      );
 
       const data = await response.json();
 
@@ -288,7 +253,7 @@ const CertificateGenerator = () => {
       setSelectedTemplate(updatedTemplate);
       setTemplates(templates.map(t => t.id === selectedTemplate.id ? updatedTemplate : t));
 
-      setSavedMessage(`✓ Template saved! ID: ${data.template_id}`);
+      setSavedMessage(`✓ Template ${persisted ? 'updated' : 'saved'}! ID: ${data.template_id}`);
       setTimeout(() => setSavedMessage(''), 4000);
     } catch (error) {
       console.error('Save error:', error);
@@ -587,6 +552,7 @@ const CertificateGenerator = () => {
             <div>
               <h1 className="text-3xl font-bold text-gray-800 mb-2">Certificate Generator API</h1>
               <p className="text-gray-600">Create, manage, and generate certificates with Urdu & English support</p>
+              <p className="text-xs text-gray-500 mt-1 break-all">API: {getPrimaryApiUrl()}</p>
             </div>
             <div className="flex gap-2">
               <label className="cursor-pointer">

@@ -234,6 +234,40 @@ async def create_template(config: TemplateConfig):
         print(f"Error creating template: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create template: {str(e)}")
 
+
+@app.put("/api/template/{template_id}")
+async def update_template(template_id: int, config: TemplateConfig):
+    if not template_db.get_template(template_id):
+        raise HTTPException(status_code=404, detail="Template not found")
+    try:
+        cx = (config.course_text_position or {}).get("x", config.text_position["x"])
+        cy = (config.course_text_position or {}).get("y", config.text_position["y"] + 60)
+        ok = template_db.update_template(
+            template_id,
+            name=config.name,
+            image_base64=config.image_base64,
+            text_x=config.text_position["x"],
+            text_y=config.text_position["y"],
+            font=config.font,
+            font_size=config.font_size,
+            alignment=config.alignment,
+            color=config.color,
+            language=config.language,
+            course_text_x=cx,
+            course_text_y=cy,
+            course_font=config.course_font or config.font,
+            course_font_size=config.course_font_size if config.course_font_size is not None else config.font_size,
+            course_alignment=config.course_alignment or config.alignment,
+            course_color=config.course_color or config.color,
+        )
+        if not ok:
+            raise HTTPException(status_code=500, detail="Failed to update template")
+        return {"template_id": template_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update template: {str(e)}")
+
 @app.get("/api/templates")
 async def list_templates():
     templates = template_db.list_templates()
@@ -298,6 +332,7 @@ async def generate_certificate(template_id: int, name: str = Query(...)):
 
 
 @app.get("/api/certificate-with-course/{template_id}")
+@app.get("/api/certificate_with_course/{template_id}")
 async def generate_certificate_with_course(
     template_id: int,
     name: str = Query(...),
