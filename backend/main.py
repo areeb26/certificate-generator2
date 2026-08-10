@@ -138,8 +138,11 @@ def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, 
 
 @app.get("/")
 async def root():
-    count = template_db.get_template_count()
-    db_info = db.get_database_info()
+    try:
+        count = template_db.get_template_count()
+        db_info = db.get_database_info()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"db: {e}")
     return {
         "message": "Certificate API",
         "urdu_support": URDU_SUPPORT,
@@ -211,8 +214,11 @@ async def get_template(template_id: int):
 @app.get("/api/debug/fonts")
 async def debug_fonts():
     font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
-    info = {"font_dir": font_dir, "exists": os.path.exists(font_dir), "files": os.listdir(font_dir) if os.path.exists(font_dir) else [], "urdu_support": URDU_SUPPORT}
-    return info
+    files = {}
+    if os.path.exists(font_dir):
+        for name in os.listdir(font_dir):
+            files[name] = os.path.getsize(os.path.join(font_dir, name))
+    return {"font_dir": font_dir, "exists": os.path.exists(font_dir), "files": files, "urdu_support": URDU_SUPPORT}
 
 @app.get("/api/certificate/{template_id}")
 async def generate_certificate(template_id: int, name: str = Query(...)):
