@@ -649,7 +649,7 @@ const CertificateGenerator = () => {
             <h2 className="text-xl font-bold text-gray-800 mb-4">Configuration</h2>
             
             {selectedTemplate ? (
-              <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Language
@@ -722,6 +722,41 @@ const CertificateGenerator = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Text Alignment
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['left', 'center', 'right'].map(align => (
+                      <button
+                        key={align}
+                        type="button"
+                        onClick={() => updateConfig(fieldKeys(activeField).alignment, align)}
+                        className={`py-2 px-4 rounded-lg transition capitalize ${
+                          selectedTemplate.config[fieldKeys(activeField).alignment] === align
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        {align}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedTemplate.config.language === 'ur' && (
+                    <button
+                      type="button"
+                      onClick={() => updateConfig(fieldKeys(activeField).alignment, 'rtl-end')}
+                      className={`w-full mt-2 py-3 px-4 rounded-lg transition font-medium ${
+                        selectedTemplate.config[fieldKeys(activeField).alignment] === 'rtl-end'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200'
+                      }`}
+                    >
+                      RTL end — click = left end of Urdu text
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Text Position
                   </label>
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
@@ -786,30 +821,6 @@ const CertificateGenerator = () => {
                     onChange={(e) => updateConfig(fieldKeys(activeField).fontSize, parseInt(e.target.value))}
                     className="w-full"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Text Alignment
-                  </label>
-                  <div className={`grid gap-2 ${selectedTemplate.config.language === 'ur' ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                    {(selectedTemplate.config.language === 'ur'
-                      ? ['left', 'center', 'right', 'rtl-end']
-                      : ['left', 'center', 'right']
-                    ).map(align => (
-                      <button
-                        key={align}
-                        onClick={() => updateConfig(fieldKeys(activeField).alignment, align)}
-                        className={`py-2 px-4 rounded-lg transition ${
-                          selectedTemplate.config[fieldKeys(activeField).alignment] === align
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        {align === 'rtl-end' ? 'RTL end' : align}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 <div>
