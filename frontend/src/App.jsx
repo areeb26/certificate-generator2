@@ -279,7 +279,17 @@ const CertificateGenerator = () => {
       previewName
     )}`;
     navigator.clipboard.writeText(url);
-    setSavedMessage('API URL copied!');
+    setSavedMessage('Name-only API URL copied!');
+    setTimeout(() => setSavedMessage(''), 2000);
+  };
+
+  const copyApiUrlWithCourse = () => {
+    if (!selectedTemplate) return;
+    const url = `${getPrimaryApiUrl()}/api/certificate-with-course/${selectedTemplate.id}?name=${encodeURIComponent(
+      previewName
+    )}&course=${encodeURIComponent(previewCourse)}`;
+    navigator.clipboard.writeText(url);
+    setSavedMessage('Name+course API URL copied!');
     setTimeout(() => setSavedMessage(''), 2000);
   };
 
@@ -313,7 +323,7 @@ const CertificateGenerator = () => {
     }
   };
 
-    const drawCertificate = () => {
+  const drawCertificate = () => {
     if (!selectedTemplate || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -323,27 +333,28 @@ const CertificateGenerator = () => {
     canvas.height = img.naturalHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
-    // Active field only (dual overlay is Task 4)
-    const keys = fieldKeys(activeField);
-    const cfg = selectedTemplate.config;
-    const textPosition = cfg[keys.position];
-    const font = cfg[keys.font];
-    const fontSize = cfg[keys.fontSize];
-    const alignment = cfg[keys.alignment];
-    const color = cfg[keys.color];
 
-    // Simple text rendering - backend handles all RTL/Urdu processing
-    ctx.font = `${fontSize}px ${font}`;
-    ctx.fillStyle = color;
-    ctx.textBaseline = 'top';
+    const drawOverlay = (text, pos, font, fontSize, alignment, color) => {
+      if (!text) return;
+      ctx.font = `${fontSize}px ${font}`;
+      ctx.fillStyle = color;
+      ctx.textBaseline = 'top';
+      if (alignment === 'center') ctx.textAlign = 'center';
+      else if (alignment === 'right') ctx.textAlign = 'right';
+      else ctx.textAlign = 'left';
+      ctx.fillText(text, pos.x, pos.y);
+    };
 
-    // Set text alignment
-    if (alignment === 'center') ctx.textAlign = 'center';
-    else if (alignment === 'right') ctx.textAlign = 'right';
-    else ctx.textAlign = 'left';
-
-    // Draw text (backend handles reshape + bidi for Urdu)
-    ctx.fillText(keys.previewText, textPosition.x, textPosition.y);
+    const c = selectedTemplate.config;
+    drawOverlay(previewName, c.textPosition, c.font, c.fontSize, c.alignment, c.color);
+    drawOverlay(
+      previewCourse,
+      c.courseTextPosition,
+      c.courseFont,
+      c.courseFontSize,
+      c.courseAlignment,
+      c.courseColor
+    );
   };
 
   // Note: All Urdu text processing (reshape + bidi) is handled by the backend
@@ -725,22 +736,41 @@ const CertificateGenerator = () => {
                   Save Template to Database
                 </button>
 
-                <div className="pt-4 border-t border-gray-200">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    API Endpoint
-                  </label>
-                  <div className="bg-gray-100 p-3 rounded-lg">
-                    <code className="text-xs text-gray-800 break-all">
-                      GET /api/certificate/{selectedTemplate.id}?name=YourName
-                    </code>
+                <div className="pt-4 border-t border-gray-200 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Name-only API Endpoint
+                    </label>
+                    <div className="bg-gray-100 p-3 rounded-lg">
+                      <code className="text-xs text-gray-800 break-all">
+                        GET /api/certificate/{selectedTemplate.id}?name=YourName
+                      </code>
+                    </div>
+                    <button
+                      onClick={copyApiUrl}
+                      className="w-full mt-2 py-2 px-4 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition flex items-center justify-center gap-2"
+                    >
+                      <Copy size={18} />
+                      Copy Name-only URL
+                    </button>
                   </div>
-                  <button
-                    onClick={copyApiUrl}
-                    className="w-full mt-2 py-2 px-4 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition flex items-center justify-center gap-2"
-                  >
-                    <Copy size={18} />
-                    Copy Full URL
-                  </button>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Name+Course API Endpoint
+                    </label>
+                    <div className="bg-gray-100 p-3 rounded-lg">
+                      <code className="text-xs text-gray-800 break-all">
+                        GET /api/certificate-with-course/{selectedTemplate.id}?name=YourName&course=CourseName
+                      </code>
+                    </div>
+                    <button
+                      onClick={copyApiUrlWithCourse}
+                      className="w-full mt-2 py-2 px-4 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition flex items-center justify-center gap-2"
+                    >
+                      <Copy size={18} />
+                      Copy Name+Course URL
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -770,6 +800,25 @@ const CertificateGenerator = () => {
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-right"
                     style={{ 
                       fontFamily: selectedTemplate.config.font,
+                      textAlign: selectedTemplate.config.language === 'ur' ? 'right' : 'left',
+                      direction: selectedTemplate.config.language === 'ur' ? 'rtl' : 'ltr'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {selectedTemplate.config.language === 'ur' ? 'کورس' : 'Course to Preview'}
+                  </label>
+                  <input
+                    type="text"
+                    value={previewCourse}
+                    onChange={(e) => setPreviewCourse(e.target.value)}
+                    placeholder={selectedTemplate.config.language === 'ur' ? 'کورس کا نام...' : 'Enter course name...'}
+                    dir={selectedTemplate.config.language === 'ur' ? 'rtl' : 'ltr'}
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    style={{
+                      fontFamily: selectedTemplate.config.courseFont,
                       textAlign: selectedTemplate.config.language === 'ur' ? 'right' : 'left',
                       direction: selectedTemplate.config.language === 'ur' ? 'rtl' : 'ltr'
                     }}
