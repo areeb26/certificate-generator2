@@ -53,8 +53,12 @@ const CertificateGenerator = () => {
   const [isDragging, setIsDragging] = useState(false);
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
+  const apiPreviewImgRef = useRef(null);
+  const previewGenRef = useRef(0);
+  const previewUrlRef = useRef(null);
   const dragFieldRef = useRef(null);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const [apiPreviewReady, setApiPreviewReady] = useState(0);
 
   const fieldKeys = (field) =>
     field === 'course'
@@ -367,6 +371,15 @@ const CertificateGenerator = () => {
     if (!selectedTemplate || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
+    const apiImg = apiPreviewImgRef.current;
+    const liveApi = apiImg && apiImg.complete && apiImg.naturalWidth && !isDragging && !isPositioning;
+    if (liveApi) {
+      canvas.width = apiImg.naturalWidth;
+      canvas.height = apiImg.naturalHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(apiImg, 0, 0);
+      return;
+    }
     const img = imageRef.current;
     if (!img || !img.complete) return;
     canvas.width = img.naturalWidth;
@@ -397,10 +410,81 @@ const CertificateGenerator = () => {
     );
   };
 
+  useEffect(() => {
+    if (!selectedTemplate?.image || !selectedTemplate.config) return;
+    if (isDragging || isPositioning) return;
+    const gen = ++previewGenRef.current;
+    const c = selectedTemplate.config;
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetchWithFallback('/api/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image_base64: selectedTemplate.image,
+            recipient_name: previewName,
+            course: previewCourse,
+            text_position: c.textPosition,
+            font: c.font,
+            font_size: c.fontSize,
+            alignment: c.alignment,
+            color: c.color,
+            language: c.language,
+            course_text_position: c.courseTextPosition,
+            course_font: c.courseFont,
+            course_font_size: c.courseFontSize,
+            course_alignment: c.courseAlignment,
+            course_color: c.courseColor,
+          }),
+        });
+        if (!response.ok || gen !== previewGenRef.current) return;
+        const blob = await response.blob();
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+        const url = URL.createObjectURL(blob);
+        previewUrlRef.current = url;
+        const img = new Image();
+        img.onload = () => {
+          if (gen !== previewGenRef.current) return;
+          apiPreviewImgRef.current = img;
+          setApiPreviewReady((n) => n + 1);
+        };
+        img.src = url;
+      } catch {
+        /* keep last local canvas draw */
+      }
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [
+    selectedTemplate,
+    previewName,
+    previewCourse,
+    isDragging,
+    isPositioning,
+  ]);
+
+  useEffect(() => {
+    drawCertificate();
+  }, [apiPreviewReady, isDragging, isPositioning]);
+
   // Note: All Urdu text processing (reshape + bidi) is handled by the backend
   // The frontend just displays a preview using browser fonts
 
   const downloadCertificate = () => {
+    const apiImg = apiPreviewImgRef.current;
+    if (apiImg?.src) {
+      try {
+        const fileName = `certificate_${previewName.replace(/\s+/g, '_').replace(/[^\w\s-]/g, '')}.png`;
+        const link = document.createElement('a');
+        link.href = apiImg.src;
+        link.download = fileName;
+        link.click();
+        setSavedMessage('Certificate downloaded successfully!');
+        setTimeout(() => setSavedMessage(''), 3000);
+        return;
+      } catch (error) {
+        console.error('Download error:', error);
+      }
+    }
     if (!canvasRef.current) return;
     try {
       drawCertificate();
@@ -882,7 +966,9 @@ const CertificateGenerator = () => {
                   )}
                   {!isPositioning && (
                     <div className="absolute top-0 left-0 right-0 bg-blue-500 text-white text-xs py-1 px-2 z-10 text-center">
-                      Drag the text to reposition it
+                      {isDragging
+                        ? 'Drag the text to reposition it'
+                        : 'Server preview — same render as n8n / download'}
                     </div>
                   )}
                   <img

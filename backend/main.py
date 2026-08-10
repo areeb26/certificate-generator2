@@ -136,6 +136,56 @@ def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, 
         draw.text((draw_x, text_y), display_text, fill=color, font=font, anchor='ls')
 
 
+def render_certificate_png(
+    image_base64: str,
+    recipient_name: str,
+    course: str,
+    text_x, text_y, font_size, alignment, color, language,
+    course_text_x=None, course_text_y=None, course_font_size=None,
+    course_alignment=None, course_color=None,
+) -> bytes:
+    """One draw path for n8n generate + editor preview."""
+    image_data = base64.b64decode(image_base64.split(",")[1])
+    image = Image.open(io.BytesIO(image_data))
+    if image.mode not in ("RGB", "RGBA"):
+        image = image.convert("RGB")
+    draw = ImageDraw.Draw(image)
+    font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    draw_text_on_image(
+        draw, recipient_name, text_x, text_y, font_size, alignment, color, language, font_dir,
+    )
+    if course:
+        draw_text_on_image(
+            draw, course,
+            course_text_x if course_text_x is not None else text_x,
+            course_text_y if course_text_y is not None else text_y + 60,
+            course_font_size if course_font_size is not None else font_size,
+            course_alignment or alignment,
+            course_color or color,
+            language, font_dir,
+        )
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class PreviewRequest(BaseModel):
+    image_base64: str
+    recipient_name: str
+    course: str = ""
+    text_position: dict
+    font: str = ""
+    font_size: int
+    alignment: str
+    color: str
+    language: str
+    course_text_position: dict | None = None
+    course_font: str | None = None
+    course_font_size: int | None = None
+    course_alignment: str | None = None
+    course_color: str | None = None
+
+
 @app.get("/")
 async def root():
     try:
@@ -236,35 +286,13 @@ async def generate_certificate(template_id: int, name: str = Query(...)):
         raise HTTPException(status_code=404, detail="Template not found")
 
     try:
-        image_base64 = template["image_base64"]
-        language = template["language"]
-
-        image_data = base64.b64decode(image_base64.split(',')[1])
-        image = Image.open(io.BytesIO(image_data))
-        draw = ImageDraw.Draw(image)
-
-        font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
-
-        # Debug: Print incoming name (safe for Windows console)
-        try:
-            print(f"Name type: {type(name)}")
-            print(f"Name repr: {repr(name)}")
-        except UnicodeEncodeError:
-            pass
-
-        draw_text_on_image(
-            draw, name,
+        png = render_certificate_png(
+            template["image_base64"], name, "",
             template["text_x"], template["text_y"],
             template["font_size"], template["alignment"], template["color"],
-            language, font_dir,
+            template["language"],
         )
-
-        img_bytes = io.BytesIO()
-        image.save(img_bytes, format='PNG')
-        img_bytes.seek(0)
-
-        return Response(content=img_bytes.getvalue(), media_type="image/png")
-
+        return Response(content=png, media_type="image/png")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
@@ -279,29 +307,34 @@ async def generate_certificate_with_course(
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     try:
-        image_data = base64.b64decode(template["image_base64"].split(",")[1])
-        image = Image.open(io.BytesIO(image_data))
-        draw = ImageDraw.Draw(image)
-        font_dir = os.path.join(os.path.dirname(__file__), "fonts")
-        language = template["language"]
-
-        draw_text_on_image(
-            draw, name,
+        png = render_certificate_png(
+            template["image_base64"], name, course,
             template["text_x"], template["text_y"],
             template["font_size"], template["alignment"], template["color"],
-            language, font_dir,
-        )
-        draw_text_on_image(
-            draw, course,
+            template["language"],
             template["course_text_x"], template["course_text_y"],
             template["course_font_size"], template["course_alignment"], template["course_color"],
-            language, font_dir,
         )
+        return Response(content=png, media_type="image/png")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        buf.seek(0)
-        return Response(content=buf.getvalue(), media_type="image/png")
+
+@app.post("/api/preview")
+async def preview_certificate(req: PreviewRequest):
+    try:
+        cx = (req.course_text_position or {}).get("x", req.text_position["x"])
+        cy = (req.course_text_position or {}).get("y", req.text_position["y"] + 60)
+        png = render_certificate_png(
+            req.image_base64, req.recipient_name, req.course,
+            req.text_position["x"], req.text_position["y"],
+            req.font_size, req.alignment, req.color, req.language,
+            cx, cy,
+            req.course_font_size if req.course_font_size is not None else req.font_size,
+            req.course_alignment or req.alignment,
+            req.course_color or req.color,
+        )
+        return Response(content=png, media_type="image/png")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 

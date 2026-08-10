@@ -148,6 +148,32 @@ def test_postgres_execute_rolls_back_on_error():
         db_mod.db.get_connection = orig_get
 
 
+def test_render_png_matches_generate_overlays():
+    """Editor preview and n8n must share one renderer (name + course ink)."""
+    import base64
+    import io
+    from PIL import Image
+    import main as main_mod
+
+    blank = Image.new("RGB", (200, 140), "white")
+    buf = io.BytesIO()
+    blank.save(buf, format="PNG")
+    data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    png = main_mod.render_certificate_png(
+        data_uri,
+        recipient_name="Ann",
+        course="Math",
+        text_x=100, text_y=40, font_size=22, alignment="center", color="#000000", language="en",
+        course_text_x=100, course_text_y=100, course_font_size=20,
+        course_alignment="center", course_color="#000000",
+    )
+    out = Image.open(io.BytesIO(png)).convert("RGB")
+    name_region = [out.getpixel((x, y)) for y in range(18, 50) for x in range(70, 130)]
+    course_region = [out.getpixel((x, y)) for y in range(78, 115) for x in range(70, 130)]
+    assert any(px != (255, 255, 255) for px in name_region), "name overlay missing"
+    assert any(px != (255, 255, 255) for px in course_region), "course overlay missing"
+
+
 if __name__ == "__main__":
     test_create_and_get_includes_course_fields()
     test_get_fills_course_defaults_when_null()
@@ -155,5 +181,6 @@ if __name__ == "__main__":
     test_urdu_uses_noori_nastaleeq_exactly()
     test_text_sits_on_baseline_not_hanging_from_top()
     test_postgres_execute_rolls_back_on_error()
+    test_render_png_matches_generate_overlays()
     print("OK: course DB checks passed")
     os.remove(_path)
