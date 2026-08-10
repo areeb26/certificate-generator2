@@ -46,11 +46,32 @@ const CertificateGenerator = () => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isPositioning, setIsPositioning] = useState(false);
   const [previewName, setPreviewName] = useState('احمد علی');
+  const [previewCourse, setPreviewCourse] = useState('Web Development');
+  const [activeField, setActiveField] = useState('name'); // 'name' | 'course'
   const [savedMessage, setSavedMessage] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
+
+  const fieldKeys = (field) =>
+    field === 'course'
+      ? {
+          position: 'courseTextPosition',
+          font: 'courseFont',
+          fontSize: 'courseFontSize',
+          alignment: 'courseAlignment',
+          color: 'courseColor',
+          previewText: previewCourse,
+        }
+      : {
+          position: 'textPosition',
+          font: 'font',
+          fontSize: 'fontSize',
+          alignment: 'alignment',
+          color: 'color',
+          previewText: previewName,
+        };
 
   const fonts = [
     { name: 'Arial', value: 'Arial, sans-serif', lang: 'en' },
@@ -82,7 +103,12 @@ const CertificateGenerator = () => {
             fontSize: 48,
             alignment: 'center',
             color: '#000000',
-            language: 'en'
+            language: 'en',
+            courseTextPosition: { x: 50, y: 110 },
+            courseFont: 'Arial, sans-serif',
+            courseFontSize: 36,
+            courseAlignment: 'center',
+            courseColor: '#000000',
           }
         };
         setTemplates([...templates, newTemplate]);
@@ -100,11 +126,12 @@ const CertificateGenerator = () => {
     const scaleY = canvas.height / rect.height;
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
+    const keys = fieldKeys(activeField);
     const updatedTemplate = {
       ...selectedTemplate,
       config: {
         ...selectedTemplate.config,
-        textPosition: { x, y }
+        [keys.position]: { x, y }
       }
     };
     setSelectedTemplate(updatedTemplate);
@@ -120,17 +147,19 @@ const CertificateGenerator = () => {
     const scaleY = canvas.height / rect.height;
     const mouseX = (e.clientX - rect.left) * scaleX;
     const mouseY = (e.clientY - rect.top) * scaleY;
-    const textPos = selectedTemplate.config.textPosition;
+    const keys = fieldKeys(activeField);
+    const cfg = selectedTemplate.config;
+    const textPos = cfg[keys.position];
     const ctx = canvas.getContext('2d');
-    ctx.font = `${selectedTemplate.config.fontSize}px ${selectedTemplate.config.font}`;
-    const textMetrics = ctx.measureText(previewName);
+    ctx.font = `${cfg[keys.fontSize]}px ${cfg[keys.font]}`;
+    const textMetrics = ctx.measureText(keys.previewText);
     const textWidth = textMetrics.width;
-    const textHeight = selectedTemplate.config.fontSize;
+    const textHeight = cfg[keys.fontSize];
     let textLeft = textPos.x;
     let textTop = textPos.y;
-    if (selectedTemplate.config.alignment === 'center') {
+    if (cfg[keys.alignment] === 'center') {
       textLeft = textPos.x - textWidth / 2;
-    } else if (selectedTemplate.config.alignment === 'right') {
+    } else if (cfg[keys.alignment] === 'right') {
       textLeft = textPos.x - textWidth;
     }
     if (mouseX >= textLeft && mouseX <= textLeft + textWidth &&
@@ -151,11 +180,12 @@ const CertificateGenerator = () => {
     const scaleY = canvas.height / rect.height;
     const x = (e.clientX - rect.left) * scaleX - dragOffset.x;
     const y = (e.clientY - rect.top) * scaleY - dragOffset.y;
+    const keys = fieldKeys(activeField);
     const updatedTemplate = {
       ...selectedTemplate,
       config: {
         ...selectedTemplate.config,
-        textPosition: { x, y }
+        [keys.position]: { x, y }
       }
     };
     setSelectedTemplate(updatedTemplate);
@@ -203,7 +233,12 @@ const CertificateGenerator = () => {
           font_size: selectedTemplate.config.fontSize,
           alignment: selectedTemplate.config.alignment,
           color: selectedTemplate.config.color,
-          language: selectedTemplate.config.language
+          language: selectedTemplate.config.language,
+          course_text_position: selectedTemplate.config.courseTextPosition,
+          course_font: selectedTemplate.config.courseFont,
+          course_font_size: selectedTemplate.config.courseFontSize,
+          course_alignment: selectedTemplate.config.courseAlignment,
+          course_color: selectedTemplate.config.courseColor,
         })
       });
 
@@ -288,7 +323,14 @@ const CertificateGenerator = () => {
     canvas.height = img.naturalHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
-    const { textPosition, font, fontSize, alignment, color } = selectedTemplate.config;
+    // Active field only (dual overlay is Task 4)
+    const keys = fieldKeys(activeField);
+    const cfg = selectedTemplate.config;
+    const textPosition = cfg[keys.position];
+    const font = cfg[keys.font];
+    const fontSize = cfg[keys.fontSize];
+    const alignment = cfg[keys.alignment];
+    const color = cfg[keys.color];
 
     // Simple text rendering - backend handles all RTL/Urdu processing
     ctx.font = `${fontSize}px ${font}`;
@@ -301,7 +343,7 @@ const CertificateGenerator = () => {
     else ctx.textAlign = 'left';
 
     // Draw text (backend handles reshape + bidi for Urdu)
-    ctx.fillText(previewName, textPosition.x, textPosition.y);
+    ctx.fillText(keys.previewText, textPosition.x, textPosition.y);
   };
 
   // Note: All Urdu text processing (reshape + bidi) is handled by the backend
@@ -358,7 +400,15 @@ const CertificateGenerator = () => {
                   fontSize: fullData.font_size,
                   alignment: fullData.alignment,
                   color: fullData.color,
-                  language: fullData.language
+                  language: fullData.language,
+                  courseTextPosition: fullData.course_text_position || {
+                    x: fullData.text_position.x,
+                    y: fullData.text_position.y + 60,
+                  },
+                  courseFont: fullData.course_font || fullData.font,
+                  courseFontSize: fullData.course_font_size || fullData.font_size,
+                  courseAlignment: fullData.course_alignment || fullData.alignment,
+                  courseColor: fullData.course_color || fullData.color,
                 }
               };
             })
@@ -378,7 +428,21 @@ const CertificateGenerator = () => {
     if (selectedTemplate && imageRef.current?.complete) {
       drawCertificate();
     }
-  }, [selectedTemplate?.config?.fontSize, selectedTemplate?.config?.font, selectedTemplate?.config?.color, selectedTemplate?.config?.alignment, selectedTemplate?.config?.textPosition, previewName]);
+  }, [
+    selectedTemplate?.config?.fontSize,
+    selectedTemplate?.config?.font,
+    selectedTemplate?.config?.color,
+    selectedTemplate?.config?.alignment,
+    selectedTemplate?.config?.textPosition,
+    selectedTemplate?.config?.courseFontSize,
+    selectedTemplate?.config?.courseFont,
+    selectedTemplate?.config?.courseColor,
+    selectedTemplate?.config?.courseAlignment,
+    selectedTemplate?.config?.courseTextPosition,
+    previewName,
+    previewCourse,
+    activeField,
+  ]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
@@ -494,6 +558,7 @@ const CertificateGenerator = () => {
                       onClick={() => {
                         updateConfig('language', 'en');
                         setPreviewName('John Doe');
+                        setPreviewCourse('Web Development');
                       }}
                       className={`py-2 px-4 rounded-lg transition ${
                         selectedTemplate.config.language === 'en'
@@ -508,6 +573,7 @@ const CertificateGenerator = () => {
                         updateConfig('language', 'ur');
                         updateConfig('font', 'Tahoma, sans-serif');
                         setPreviewName('احمد علی');
+                        setPreviewCourse('ویب ڈویلپمنٹ');
                       }}
                       className={`py-2 px-4 rounded-lg transition ${
                         selectedTemplate.config.language === 'ur'
@@ -516,6 +582,36 @@ const CertificateGenerator = () => {
                       }`}
                     >
                       اردو
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Edit Field
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveField('name')}
+                      className={`py-2 px-4 rounded-lg transition ${
+                        activeField === 'name'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Name
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveField('course')}
+                      className={`py-2 px-4 rounded-lg transition ${
+                        activeField === 'course'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Course
                     </button>
                   </div>
                 </div>
@@ -543,8 +639,8 @@ const CertificateGenerator = () => {
                     {isPositioning ? 'Click on preview to set position' : 'Set Position (Click Mode)'}
                   </button>
                   <p className="text-xs text-gray-500 mt-1">
-                    Current: X: {Math.round(selectedTemplate.config.textPosition.x)}, 
-                    Y: {Math.round(selectedTemplate.config.textPosition.y)}
+                    Current: X: {Math.round(selectedTemplate.config[fieldKeys(activeField).position].x)},
+                    Y: {Math.round(selectedTemplate.config[fieldKeys(activeField).position].y)}
                   </p>
                 </div>
 
@@ -553,8 +649,8 @@ const CertificateGenerator = () => {
                     Font
                   </label>
                   <select
-                    value={selectedTemplate.config.font}
-                    onChange={(e) => updateConfig('font', e.target.value)}
+                    value={selectedTemplate.config[fieldKeys(activeField).font]}
+                    onChange={(e) => updateConfig(fieldKeys(activeField).font, e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   >
                     <optgroup label="English Fonts">
@@ -576,14 +672,14 @@ const CertificateGenerator = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Font Size: {selectedTemplate.config.fontSize}px
+                    Font Size: {selectedTemplate.config[fieldKeys(activeField).fontSize]}px
                   </label>
                   <input
                     type="range"
                     min="20"
                     max="500"
-                    value={selectedTemplate.config.fontSize}
-                    onChange={(e) => updateConfig('fontSize', parseInt(e.target.value))}
+                    value={selectedTemplate.config[fieldKeys(activeField).fontSize]}
+                    onChange={(e) => updateConfig(fieldKeys(activeField).fontSize, parseInt(e.target.value))}
                     className="w-full"
                   />
                 </div>
@@ -596,9 +692,9 @@ const CertificateGenerator = () => {
                     {['left', 'center', 'right'].map(align => (
                       <button
                         key={align}
-                        onClick={() => updateConfig('alignment', align)}
+                        onClick={() => updateConfig(fieldKeys(activeField).alignment, align)}
                         className={`py-2 px-4 rounded-lg transition capitalize ${
-                          selectedTemplate.config.alignment === align
+                          selectedTemplate.config[fieldKeys(activeField).alignment] === align
                             ? 'bg-indigo-600 text-white'
                             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                         }`}
@@ -615,8 +711,8 @@ const CertificateGenerator = () => {
                   </label>
                   <input
                     type="color"
-                    value={selectedTemplate.config.color}
-                    onChange={(e) => updateConfig('color', e.target.value)}
+                    value={selectedTemplate.config[fieldKeys(activeField).color]}
+                    onChange={(e) => updateConfig(fieldKeys(activeField).color, e.target.value)}
                     className="w-full h-10 rounded-lg cursor-pointer"
                   />
                 </div>
