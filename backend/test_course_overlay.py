@@ -67,8 +67,24 @@ def test_get_fills_course_defaults_when_null():
     assert t["course_color"] == "#000000"
 
 
+def test_draw_helper_writes_course_pixels():
+    from PIL import Image, ImageDraw
+    import main as main_mod
+
+    img = Image.new("RGB", (400, 300), "white")
+    draw = ImageDraw.Draw(img)
+    font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    main_mod.draw_text_on_image(
+        draw, "Math 101", 200, 150, 32, "center", "#000000", "en", font_dir
+    )
+    # Near draw point should have ink (exact center can sit in a glyph gap / word space)
+    region = [img.getpixel((x, y)) for y in range(150, 175) for x in range(170, 230)]
+    assert any(px != (255, 255, 255) for px in region), "expected course text to darken pixels near draw point"
+
+
 if __name__ == "__main__":
     test_create_and_get_includes_course_fields()
     test_get_fills_course_defaults_when_null()
+    test_draw_helper_writes_course_pixels()
     print("OK: course DB checks passed")
     os.remove(_path)

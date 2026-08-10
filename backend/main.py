@@ -47,6 +47,109 @@ class TemplateConfig(BaseModel):
     alignment: str
     color: str
     language: str
+    course_text_position: dict | None = None
+    course_font: str | None = None
+    course_font_size: int | None = None
+    course_alignment: str | None = None
+    course_color: str | None = None
+
+
+def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, language, font_dir):
+    if not text:
+        return
+
+    font = None
+
+    # For Urdu: use Nastaliq fonts if libraqm available, otherwise use Tahoma
+    if language == 'ur':
+        if LIBRAQM_AVAILABLE:
+            # Use beautiful Nastaliq fonts with libraqm support
+            font_paths = [
+                os.path.join(font_dir, 'Jameel Noori Nastaleeq.ttf'),
+                os.path.join(font_dir, 'NotoNastaliqUrdu-Regular.ttf'),
+                'C:\\Windows\\Fonts\\tahoma.ttf',
+            ]
+        else:
+            # Use Tahoma (clean, professional, supports Arabic)
+            font_paths = [
+                'C:\\Windows\\Fonts\\tahoma.ttf',
+                'C:\\Windows\\Fonts\\tahomabd.ttf',  # Tahoma Bold
+                os.path.join(font_dir, 'ARIAL.TTF'),
+            ]
+    else:
+        font_paths = [
+            os.path.join(font_dir, 'ARIAL.TTF'),
+            os.path.join(font_dir, 'arial.ttf'),
+        ]
+
+    for path in font_paths:
+        if os.path.exists(path):
+            font = ImageFont.truetype(path, font_size)
+            try:
+                print(f"Using font: {os.path.basename(path)}")
+            except:
+                pass
+            break
+
+    if font is None:
+        font = ImageFont.load_default()
+        try:
+            print("Using default font (WARNING: may not support Urdu)")
+        except:
+            pass
+
+    # For Urdu text processing with Tahoma font
+    if language == 'ur' and URDU_SUPPORT:
+        try:
+            # Reshape to get Arabic Presentation Forms
+            reshaped = reshape(text)
+            # Reverse for RTL display
+            display_text = get_display(reshaped)
+
+            try:
+                print(f"Urdu text: reshaped and reversed with Tahoma")
+            except:
+                pass
+        except Exception as e:
+            try:
+                print(f"Urdu processing error: {repr(e)}")
+            except:
+                pass
+            # Fallback: just reverse
+            display_text = text[::-1]
+    elif language == 'ur':
+        # No reshape/bidi libraries, just reverse
+        display_text = text[::-1]
+        try:
+            print("Urdu: simple reversal (libraries not available)")
+        except:
+            pass
+    else:
+        display_text = text
+
+    # Calculate text width for alignment
+    bbox = draw.textbbox((0, 0), display_text, font=font, anchor='la')
+    text_width = bbox[2] - bbox[0]
+
+    draw_x = text_x
+    if alignment == 'center':
+        draw_x = text_x - text_width / 2
+    elif alignment == 'right':
+        draw_x = text_x - text_width
+
+    # Draw text with proper rendering
+    if language == 'ur' and LIBRAQM_AVAILABLE:
+        # Use PIL's advanced text rendering with libraqm
+        try:
+            draw.text((draw_x, text_y), text, fill=color, font=font, anchor='la',
+                     direction='rtl', language='ur', features=['liga', 'calt', 'ccmp', 'locl'])
+        except:
+            # Fallback if advanced features fail
+            draw.text((draw_x, text_y), display_text, fill=color, font=font, anchor='la')
+    else:
+        # Simple drawing (for Tahoma with reshaped text)
+        draw.text((draw_x, text_y), display_text, fill=color, font=font, anchor='la')
+
 
 @app.get("/")
 async def root():
@@ -64,6 +167,8 @@ async def root():
 @app.post("/api/template")
 async def create_template(config: TemplateConfig):
     try:
+        cx = (config.course_text_position or {}).get("x", config.text_position["x"])
+        cy = (config.course_text_position or {}).get("y", config.text_position["y"] + 60)
         template_id = template_db.create_template(
             name=config.name,
             image_base64=config.image_base64,
@@ -73,7 +178,13 @@ async def create_template(config: TemplateConfig):
             font_size=config.font_size,
             alignment=config.alignment,
             color=config.color,
-            language=config.language
+            language=config.language,
+            course_text_x=cx,
+            course_text_y=cy,
+            course_font=config.course_font or config.font,
+            course_font_size=config.course_font_size if config.course_font_size is not None else config.font_size,
+            course_alignment=config.course_alignment or config.alignment,
+            course_color=config.course_color or config.color,
         )
 
         if template_id is None:
@@ -104,7 +215,12 @@ async def get_template(template_id: int):
         "font_size": template["font_size"],
         "alignment": template["alignment"],
         "color": template["color"],
-        "language": template["language"]
+        "language": template["language"],
+        "course_text_position": {"x": template["course_text_x"], "y": template["course_text_y"]},
+        "course_font": template["course_font"],
+        "course_font_size": template["course_font_size"],
+        "course_alignment": template["course_alignment"],
+        "course_color": template["course_color"],
     }
 
 @app.get("/api/debug/fonts")
@@ -130,120 +246,71 @@ async def generate_certificate(template_id: int, name: str = Query(...)):
 
     try:
         image_base64 = template["image_base64"]
-        text_x, text_y = template["text_x"], template["text_y"]
-        font_size = template["font_size"]
-        alignment, color = template["alignment"], template["color"]
         language = template["language"]
-        
+
         image_data = base64.b64decode(image_base64.split(',')[1])
         image = Image.open(io.BytesIO(image_data))
         draw = ImageDraw.Draw(image)
-        
-        font = None
-        font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
-        
-        # For Urdu: use Nastaliq fonts if libraqm available, otherwise use Tahoma
-        if language == 'ur':
-            if LIBRAQM_AVAILABLE:
-                # Use beautiful Nastaliq fonts with libraqm support
-                font_paths = [
-                    os.path.join(font_dir, 'Jameel Noori Nastaleeq.ttf'),
-                    os.path.join(font_dir, 'NotoNastaliqUrdu-Regular.ttf'),
-                    'C:\\Windows\\Fonts\\tahoma.ttf',
-                ]
-            else:
-                # Use Tahoma (clean, professional, supports Arabic)
-                font_paths = [
-                    'C:\\Windows\\Fonts\\tahoma.ttf',
-                    'C:\\Windows\\Fonts\\tahomabd.ttf',  # Tahoma Bold
-                    os.path.join(font_dir, 'ARIAL.TTF'),
-                ]
-        else:
-            font_paths = [
-                os.path.join(font_dir, 'ARIAL.TTF'),
-                os.path.join(font_dir, 'arial.ttf'),
-            ]
-        
-        for path in font_paths:
-            if os.path.exists(path):
-                font = ImageFont.truetype(path, font_size)
-                try:
-                    print(f"Using font: {os.path.basename(path)}")
-                except:
-                    pass
-                break
 
-        if font is None:
-            font = ImageFont.load_default()
-            try:
-                print("Using default font (WARNING: may not support Urdu)")
-            except:
-                pass
-        
+        font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
+
         # Debug: Print incoming name (safe for Windows console)
         try:
             print(f"Name type: {type(name)}")
             print(f"Name repr: {repr(name)}")
         except UnicodeEncodeError:
             pass
-        
-        # For Urdu text processing with Tahoma font
-        if language == 'ur' and URDU_SUPPORT:
-            try:
-                # Reshape to get Arabic Presentation Forms
-                reshaped = reshape(name)
-                # Reverse for RTL display
-                display_name = get_display(reshaped)
 
-                try:
-                    print(f"Urdu text: reshaped and reversed with Tahoma")
-                except:
-                    pass
-            except Exception as e:
-                try:
-                    print(f"Urdu processing error: {repr(e)}")
-                except:
-                    pass
-                # Fallback: just reverse
-                display_name = name[::-1]
-        elif language == 'ur':
-            # No reshape/bidi libraries, just reverse
-            display_name = name[::-1]
-            try:
-                print("Urdu: simple reversal (libraries not available)")
-            except:
-                pass
-        else:
-            display_name = name
-        
-        # Calculate text width for alignment
-        bbox = draw.textbbox((0, 0), display_name, font=font, anchor='la')
-        text_width = bbox[2] - bbox[0]
-        
-        if alignment == 'center':
-            text_x = text_x - text_width / 2
-        elif alignment == 'right':
-            text_x = text_x - text_width
-        
-        # Draw text with proper rendering
-        if language == 'ur' and LIBRAQM_AVAILABLE:
-            # Use PIL's advanced text rendering with libraqm
-            try:
-                draw.text((text_x, text_y), name, fill=color, font=font, anchor='la',
-                         direction='rtl', language='ur', features=['liga', 'calt', 'ccmp', 'locl'])
-            except:
-                # Fallback if advanced features fail
-                draw.text((text_x, text_y), display_name, fill=color, font=font, anchor='la')
-        else:
-            # Simple drawing (for Tahoma with reshaped text)
-            draw.text((text_x, text_y), display_name, fill=color, font=font, anchor='la')
-        
+        draw_text_on_image(
+            draw, name,
+            template["text_x"], template["text_y"],
+            template["font_size"], template["alignment"], template["color"],
+            language, font_dir,
+        )
+
         img_bytes = io.BytesIO()
         image.save(img_bytes, format='PNG')
         img_bytes.seek(0)
-        
+
         return Response(content=img_bytes.getvalue(), media_type="image/png")
-    
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@app.get("/api/certificate-with-course/{template_id}")
+async def generate_certificate_with_course(
+    template_id: int,
+    name: str = Query(...),
+    course: str = Query(""),
+):
+    template = template_db.get_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    try:
+        image_data = base64.b64decode(template["image_base64"].split(",")[1])
+        image = Image.open(io.BytesIO(image_data))
+        draw = ImageDraw.Draw(image)
+        font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+        language = template["language"]
+
+        draw_text_on_image(
+            draw, name,
+            template["text_x"], template["text_y"],
+            template["font_size"], template["alignment"], template["color"],
+            language, font_dir,
+        )
+        draw_text_on_image(
+            draw, course,
+            template["course_text_x"], template["course_text_y"],
+            template["course_font_size"], template["course_alignment"], template["course_color"],
+            language, font_dir,
+        )
+
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        buf.seek(0)
+        return Response(content=buf.getvalue(), media_type="image/png")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
