@@ -583,6 +583,7 @@ const CertificateGenerator = () => {
                       onClick={() => {
                         updateConfig('language', 'ur');
                         updateConfig('font', 'Tahoma, sans-serif');
+                        updateConfig('courseFont', 'Tahoma, sans-serif');
                         setPreviewName('احمد علی');
                         setPreviewCourse('ویب ڈویلپمنٹ');
                       }}
