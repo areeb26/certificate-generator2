@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, Download, Plus, Trash2, Eye, Settings, Copy, Save } from 'lucide-react';
+import { overlayHitBox, pointInHitBox } from './overlayHitBox.js';
 
 // ✅ Backend URLs from Environment Variables (with fallback support)
 const API_URLS = [
@@ -50,9 +51,10 @@ const CertificateGenerator = () => {
   const [activeField, setActiveField] = useState('name'); // 'name' | 'course'
   const [savedMessage, setSavedMessage] = useState('');
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
+  const dragFieldRef = useRef(null);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
 
   const fieldKeys = (field) =>
     field === 'course'
@@ -140,6 +142,18 @@ const CertificateGenerator = () => {
     setIsPositioning(false);
   };
 
+  const measureHitBox = (field) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !selectedTemplate) return null;
+    const keys = fieldKeys(field);
+    const cfg = selectedTemplate.config;
+    const pos = cfg[keys.position];
+    if (!pos) return null;
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${cfg[keys.fontSize]}px ${cfg[keys.font]}`;
+    return overlayHitBox(pos, cfg[keys.fontSize], cfg[keys.alignment], ctx.measureText(keys.previewText || ' '));
+  };
+
   const handleMouseDown = (e) => {
     if (isPositioning || !selectedTemplate) return;
     const canvas = canvasRef.current;
@@ -148,63 +162,69 @@ const CertificateGenerator = () => {
     const scaleY = canvas.height / rect.height;
     const mouseX = (e.clientX - rect.left) * scaleX;
     const mouseY = (e.clientY - rect.top) * scaleY;
-    const keys = fieldKeys(activeField);
-    const cfg = selectedTemplate.config;
-    const textPos = cfg[keys.position];
-    const ctx = canvas.getContext('2d');
-    ctx.font = `${cfg[keys.fontSize]}px ${cfg[keys.font]}`;
-    const textMetrics = ctx.measureText(keys.previewText);
-    const textWidth = textMetrics.width;
-    const ascent = textMetrics.actualBoundingBoxAscent || cfg[keys.fontSize] * 0.8;
-    const descent = textMetrics.actualBoundingBoxDescent || cfg[keys.fontSize] * 0.2;
-    let textLeft = textPos.x;
-    const textTop = textPos.y - ascent;
-    if (cfg[keys.alignment] === 'center') {
-      textLeft = textPos.x - textWidth / 2;
-    } else if (cfg[keys.alignment] === 'right') {
-      textLeft = textPos.x - textWidth;
-    }
-    if (mouseX >= textLeft && mouseX <= textLeft + textWidth &&
-        mouseY >= textTop && mouseY <= textPos.y + descent) {
+    const order = activeField === 'course' ? ['course', 'name'] : ['name', 'course'];
+    for (const field of order) {
+      const box = measureHitBox(field);
+      if (!pointInHitBox(mouseX, mouseY, box)) continue;
+      const keys = fieldKeys(field);
+      const pos = selectedTemplate.config[keys.position];
+      dragFieldRef.current = field;
+      dragOffsetRef.current = { x: mouseX - pos.x, y: mouseY - pos.y };
+      setActiveField(field);
       setIsDragging(true);
-      setDragOffset({
-        x: mouseX - textPos.x,
-        y: mouseY - textPos.y
-      });
+      e.preventDefault();
+      return;
     }
   };
 
   const handleMouseMove = (e) => {
-    if (!isDragging || !selectedTemplate) return;
+    const field = dragFieldRef.current;
+    if (!field || !selectedTemplate || !canvasRef.current) return;
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX - dragOffset.x;
-    const y = (e.clientY - rect.top) * scaleY - dragOffset.y;
-    const keys = fieldKeys(activeField);
-    const updatedTemplate = {
-      ...selectedTemplate,
-      config: {
-        ...selectedTemplate.config,
-        [keys.position]: { x, y }
-      }
-    };
-    setSelectedTemplate(updatedTemplate);
-    setTemplates(templates.map(t => t.id === updatedTemplate.id ? updatedTemplate : t));
+    const x = (e.clientX - rect.left) * scaleX - dragOffsetRef.current.x;
+    const y = (e.clientY - rect.top) * scaleY - dragOffsetRef.current.y;
+    const positionKey = field === 'course' ? 'courseTextPosition' : 'textPosition';
+    const nextPos = { x, y };
+    setSelectedTemplate((prev) =>
+      prev ? { ...prev, config: { ...prev.config, [positionKey]: nextPos } } : prev
+    );
+    setTemplates((ts) =>
+      ts.map((t) =>
+        t.id === selectedTemplate.id ? { ...t, config: { ...t.config, [positionKey]: nextPos } } : t
+      )
+    );
   };
 
   const handleMouseUp = () => {
+    dragFieldRef.current = null;
     setIsDragging(false);
   };
 
-  const updateConfig = (key, value) => {
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMove = (ev) => handleMouseMove(ev);
+    const onUp = () => handleMouseUp();
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isDragging]);
+
+  const updateConfig = (keyOrPatch, value) => {
     if (!selectedTemplate) return;
+    const patch = typeof keyOrPatch === 'object' && keyOrPatch !== null
+      ? keyOrPatch
+      : { [keyOrPatch]: value };
     const updatedTemplate = {
       ...selectedTemplate,
       config: {
         ...selectedTemplate.config,
-        [key]: value
+        ...patch
       }
     };
     setSelectedTemplate(updatedTemplate);
@@ -312,7 +332,25 @@ const CertificateGenerator = () => {
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const imported = JSON.parse(event.target.result);
+          const imported = JSON.parse(event.target.result).map((t) => {
+            const cfg = t.config || {};
+            const namePos = cfg.textPosition || { x: 50, y: 50 };
+            return {
+              ...t,
+              config: {
+                ...cfg,
+                textPosition: namePos,
+                courseTextPosition: cfg.courseTextPosition || {
+                  x: namePos.x,
+                  y: namePos.y + 60,
+                },
+                courseFont: cfg.courseFont || cfg.font,
+                courseFontSize: cfg.courseFontSize || cfg.fontSize,
+                courseAlignment: cfg.courseAlignment || cfg.alignment,
+                courseColor: cfg.courseColor || cfg.color,
+              },
+            };
+          });
           setTemplates(imported);
           setSavedMessage('Templates imported successfully!');
           setTimeout(() => setSavedMessage(''), 3000);
@@ -337,7 +375,7 @@ const CertificateGenerator = () => {
     ctx.drawImage(img, 0, 0);
 
     const drawOverlay = (text, pos, font, fontSize, alignment, color) => {
-      if (!text) return;
+      if (!text || !pos) return;
       ctx.font = `${fontSize}px ${font}`;
       ctx.fillStyle = color;
       ctx.textBaseline = 'alphabetic';
@@ -583,9 +621,11 @@ const CertificateGenerator = () => {
                     </button>
                     <button
                       onClick={() => {
-                        updateConfig('language', 'ur');
-                        updateConfig('font', "'Jameel Noori Nastaleeq', Tahoma, sans-serif");
-                        updateConfig('courseFont', "'Jameel Noori Nastaleeq', Tahoma, sans-serif");
+                        updateConfig({
+                          language: 'ur',
+                          font: "'Jameel Noori Nastaleeq', Tahoma, sans-serif",
+                          courseFont: "'Jameel Noori Nastaleeq', Tahoma, sans-serif",
+                        });
                         setPreviewName('احمد علی');
                         setPreviewCourse('ویب ڈویلپمنٹ');
                       }}
@@ -834,9 +874,6 @@ const CertificateGenerator = () => {
                   }`}
                   onClick={handleCanvasClick}
                   onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
                 >
                   {isPositioning && (
                     <div className="absolute top-0 left-0 right-0 bg-green-500 text-white text-xs py-1 px-2 z-10 text-center">
