@@ -63,6 +63,8 @@ class TemplateConfig(BaseModel):
 
 
 NOORI_NASTALEEQ = "Jameel Noori Nastaleeq.ttf"
+RTL_END_RIGHT_FRAC = 0.80
+RTL_END_MIN_FONT = 16
 
 
 def resolve_font_path(language: str, font_dir: str) -> str:
@@ -77,6 +79,10 @@ def resolve_font_path(language: str, font_dir: str) -> str:
         if os.path.isfile(path):
             return path
     raise FileNotFoundError(f"No English font found in {font_dir}")
+
+
+RTL_END_RIGHT_FRAC = 0.80
+MIN_FONT_SIZE = 16
 
 
 def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, language, font_dir):
@@ -119,13 +125,30 @@ def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, 
     else:
         display_text = text
 
+    def measure(fnt):
+        if language == 'ur' and LIBRAQM_AVAILABLE:
+            try:
+                box = draw.textbbox((0, 0), text, font=fnt, anchor='ls',
+                                    direction='rtl', language='ur',
+                                    features=['liga', 'calt', 'ccmp', 'locl'])
+                return box[2] - box[0]
+            except Exception:
+                pass
+        box = draw.textbbox((0, 0), display_text, font=fnt, anchor='ls')
+        return box[2] - box[0]
+
     # ls = left + alphabetic baseline so a click on the certificate line
     # sits the letters on that line (not hanging from the top of the em-box).
-    bbox = draw.textbbox((0, 0), display_text, font=font, anchor='ls')
-    text_width = bbox[2] - bbox[0]
+    text_width = measure(font)
 
     draw_x = text_x
-    if alignment == 'center':
+    if alignment == 'rtl-end':
+        max_right = draw._image.size[0] * RTL_END_RIGHT_FRAC
+        while font_size > MIN_FONT_SIZE and text_x + text_width > max_right:
+            font_size -= 1
+            font = ImageFont.truetype(font_path, font_size)
+            text_width = measure(font)
+    elif alignment == 'center':
         draw_x = text_x - text_width / 2
     elif alignment == 'right':
         draw_x = text_x - text_width

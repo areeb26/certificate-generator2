@@ -792,18 +792,21 @@ const CertificateGenerator = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Text Alignment
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {['left', 'center', 'right'].map(align => (
+                  <div className={`grid gap-2 ${selectedTemplate.config.language === 'ur' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                    {(selectedTemplate.config.language === 'ur'
+                      ? ['left', 'center', 'right', 'rtl-end']
+                      : ['left', 'center', 'right']
+                    ).map(align => (
                       <button
                         key={align}
                         onClick={() => updateConfig(fieldKeys(activeField).alignment, align)}
-                        className={`py-2 px-4 rounded-lg transition capitalize ${
+                        className={`py-2 px-4 rounded-lg transition ${
                           selectedTemplate.config[fieldKeys(activeField).alignment] === align
                             ? 'bg-indigo-600 text-white'
                             : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                         }`}
                       >
-                        {align}
+                        {align === 'rtl-end' ? 'RTL end' : align}
                       </button>
                     ))}
                   </div>

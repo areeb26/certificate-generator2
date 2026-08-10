@@ -67,6 +67,42 @@ def test_get_fills_course_defaults_when_null():
     assert t["course_color"] == "#000000"
 
 
+def _ink_x_range(img):
+    xs = [
+        x
+        for y in range(img.size[1])
+        for x in range(img.size[0])
+        if img.getpixel((x, y)) != (255, 255, 255)
+    ]
+    assert xs, "expected some ink"
+    return min(xs), max(xs)
+
+
+def test_rtl_end_pins_left_and_shrinks_to_right_inset():
+    from PIL import Image, ImageDraw
+    import main as main_mod
+
+    font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    pin, y = 60, 90
+    img = Image.new("RGB", (400, 160), "white")
+    draw = ImageDraw.Draw(img)
+    main_mod.draw_text_on_image(
+        draw, "علی", pin, y, 36, "rtl-end", "#000000", "ur", font_dir,
+    )
+    left, _ = _ink_x_range(img)
+    assert left >= pin - 24, f"rtl-end left edge should sit at pin, got left={left} pin={pin}"
+
+    long = "قیادتِ مصطفٰی ﷺ کورس قیادتِ مصطفٰی ﷺ کورس"
+    img2 = Image.new("RGB", (400, 200), "white")
+    draw2 = ImageDraw.Draw(img2)
+    main_mod.draw_text_on_image(
+        draw2, long, pin, 120, 72, "rtl-end", "#000000", "ur", font_dir,
+    )
+    left2, right2 = _ink_x_range(img2)
+    assert left2 >= pin - 24, f"long rtl-end must not cross left pin, left={left2}"
+    assert right2 <= 400 * 0.80 + 2, f"long rtl-end must stay left of 80% width, right={right2}"
+
+
 def test_draw_helper_writes_course_pixels():
     from PIL import Image, ImageDraw
     import main as main_mod
@@ -233,6 +269,7 @@ if __name__ == "__main__":
     test_update_persists_course_position()
     test_put_template_route_exists()
     test_n8n_underscore_with_course_route_exists()
+    test_rtl_end_pins_left_and_shrinks_to_right_inset()
     test_draw_helper_writes_course_pixels()
     test_urdu_uses_noori_nastaleeq_exactly()
     test_text_sits_on_baseline_not_hanging_from_top()

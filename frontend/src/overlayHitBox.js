@@ -12,6 +12,7 @@ export function overlayHitBox(pos, fontSize, alignment, metrics) {
   let left = pos.x;
   if (alignment === 'center') left = pos.x - width / 2;
   else if (alignment === 'right') left = pos.x - width;
+  // rtl-end: left edge is the pin (same as left)
   return {
     left: left - pad,
     right: left + width + pad,
