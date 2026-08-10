@@ -190,6 +190,17 @@ def test_n8n_underscore_with_course_route_exists():
     assert "/api/certificate_with_course/{template_id}" in paths
 
 
+def test_cors_regex_allows_vercel_preview():
+    import re
+    import main as main_mod
+
+    preview = "https://certificate-generator2-edah3kju1-areeb26s-projects.vercel.app"
+    gilt = "https://certificate-generator2-gilt.vercel.app"
+    assert re.fullmatch(main_mod.VERCEL_ORIGIN_RE, preview)
+    assert re.fullmatch(main_mod.VERCEL_ORIGIN_RE, gilt)
+    assert not re.fullmatch(main_mod.VERCEL_ORIGIN_RE, "https://evil.example.com")
+
+
 def test_render_png_matches_generate_overlays():
     """Editor preview and n8n must share one renderer (name + course ink)."""
     import base64
@@ -226,6 +237,7 @@ if __name__ == "__main__":
     test_urdu_uses_noori_nastaleeq_exactly()
     test_text_sits_on_baseline_not_hanging_from_top()
     test_postgres_execute_rolls_back_on_error()
+    test_cors_regex_allows_vercel_preview()
     test_render_png_matches_generate_overlays()
     print("OK: course DB checks passed")
     os.remove(_path)

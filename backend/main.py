@@ -27,6 +27,9 @@ except:
 
 app = FastAPI(title="Certificate Generator API")
 
+# PR previews are https://certificate-generator2-<hash>-areeb26s-projects.vercel.app
+VERCEL_ORIGIN_RE = r"https://.*\.vercel\.app"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -37,6 +40,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
     ],
+    allow_origin_regex=VERCEL_ORIGIN_RE,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
