@@ -115,11 +115,45 @@ def test_text_sits_on_baseline_not_hanging_from_top():
     assert above > below * 2, f"text should sit on the line (ink above y), got above={above} below={below}"
 
 
+def test_postgres_execute_rolls_back_on_error():
+    """A failed ALTER must not leave the shared Postgres connection aborted."""
+    class FakeCursor:
+        def execute(self, q, p=()):
+            raise RuntimeError("column already exists")
+
+    class FakeConn:
+        def __init__(self):
+            self.rolled = False
+            self.closed = False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def rollback(self):
+            self.rolled = True
+
+    fake = FakeConn()
+    orig_type, orig_get = db_mod.db.db_type, db_mod.db.get_connection
+    db_mod.db.db_type = "postgresql"
+    db_mod.db.get_connection = lambda: fake
+    try:
+        try:
+            db_mod.db.execute("ALTER TABLE templates ADD COLUMN course_text_x REAL")
+            assert False, "expected execute to raise"
+        except RuntimeError:
+            pass
+        assert fake.rolled, "postgres execute must rollback so later queries can run"
+    finally:
+        db_mod.db.db_type = orig_type
+        db_mod.db.get_connection = orig_get
+
+
 if __name__ == "__main__":
     test_create_and_get_includes_course_fields()
     test_get_fills_course_defaults_when_null()
     test_draw_helper_writes_course_pixels()
     test_urdu_uses_noori_nastaleeq_exactly()
     test_text_sits_on_baseline_not_hanging_from_top()
+    test_postgres_execute_rolls_back_on_error()
     print("OK: course DB checks passed")
     os.remove(_path)

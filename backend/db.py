@@ -63,6 +63,9 @@ class Database:
         if self.db_type == 'postgresql' and POSTGRES_AVAILABLE and DATABASE_URL:
             try:
                 self.conn = psycopg2.connect(DATABASE_URL)
+                # ponytail: one long-lived conn; without autocommit, health-check
+                # SELECTs stay idle-in-transaction and block ALTER/DDL. Upgrade: pool.
+                self.conn.autocommit = True
                 print(f"[OK] Connected to PostgreSQL database")
             except Exception as e:
                 print(f"ERROR: Failed to connect to PostgreSQL: {e}")
@@ -79,6 +82,7 @@ class Database:
         if self.db_type == 'postgresql':
             if not self.conn or self.conn.closed:
                 self.conn = psycopg2.connect(DATABASE_URL)
+                self.conn.autocommit = True
             return self.conn
         else:
             return sqlite3.connect(self.db_path)
@@ -94,7 +98,14 @@ class Database:
         else:
             cursor = conn.cursor()
 
-        cursor.execute(query, params)
+        try:
+            cursor.execute(query, params)
+        except Exception:
+            # ponytail: one shared psycopg2 connection — a failed ALTER aborts the
+            # txn and every later query 500s until rollback. Upgrade: pool + retry.
+            if self.db_type == "postgresql":
+                conn.rollback()
+            raise
         return cursor, conn
 
     def fetchone(self, query: str, params: Tuple = ()) -> Optional[Tuple]:
@@ -189,13 +200,16 @@ class Database:
             self._ensure_course_columns()
             print(f"[OK] Database initialized ({self.db_type})")
         except Exception as e:
+            if self.db_type == "postgresql" and self.conn and not self.conn.closed:
+                self.conn.rollback()
             print(f"ERROR: Failed to initialize database: {e}")
 
     def _ensure_course_columns(self):
         existing = set()
         if self.db_type == "postgresql":
             rows = self.fetchall(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = 'templates'"
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'templates'"
             )
             existing = {r[0] for r in rows}
         else:
@@ -203,7 +217,10 @@ class Database:
             existing = {r[1] for r in rows}
         for col, typ in COURSE_COLUMNS:
             if col not in existing:
-                self.commit_query(f"ALTER TABLE templates ADD COLUMN {col} {typ}")
+                if self.db_type == "postgresql":
+                    self.commit_query(f"ALTER TABLE templates ADD COLUMN IF NOT EXISTS {col} {typ}")
+                else:
+                    self.commit_query(f"ALTER TABLE templates ADD COLUMN {col} {typ}")
 
     def get_database_info(self) -> dict:
         """Get information about current database"""
