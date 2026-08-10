@@ -46,7 +46,7 @@ const CertificateGenerator = () => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isPositioning, setIsPositioning] = useState(false);
   const [previewName, setPreviewName] = useState('احمد علی');
-  const [previewCourse, setPreviewCourse] = useState('Web Development');
+  const [previewCourse, setPreviewCourse] = useState('ویب ڈویلپمنٹ');
   const [activeField, setActiveField] = useState('name'); // 'name' | 'course'
   const [savedMessage, setSavedMessage] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -81,7 +81,8 @@ const CertificateGenerator = () => {
     { name: 'Courier New', value: 'Courier New, monospace', lang: 'en' },
     { name: 'Trebuchet MS', value: 'Trebuchet MS, sans-serif', lang: 'en' },
     { name: 'Impact', value: 'Impact, sans-serif', lang: 'en' },
-    { name: 'Tahoma (Recommended)', value: 'Tahoma, sans-serif', lang: 'ur' },
+    { name: 'Jameel Noori Nastaleeq (Required)', value: "'Jameel Noori Nastaleeq', Tahoma, sans-serif", lang: 'ur' },
+    { name: 'Tahoma', value: 'Tahoma, sans-serif', lang: 'ur' },
     { name: 'Arial', value: 'Arial, sans-serif', lang: 'ur' },
     { name: 'Times New Roman', value: 'Times New Roman, serif', lang: 'ur' },
     { name: 'Segoe UI', value: 'Segoe UI, sans-serif', lang: 'ur' },
@@ -99,13 +100,13 @@ const CertificateGenerator = () => {
           image: event.target.result,
           config: {
             textPosition: { x: 50, y: 50 },
-            font: 'Arial, sans-serif',
+            font: "'Jameel Noori Nastaleeq', Tahoma, sans-serif",
             fontSize: 48,
             alignment: 'center',
             color: '#000000',
-            language: 'en',
+            language: 'ur',
             courseTextPosition: { x: 50, y: 110 },
-            courseFont: 'Arial, sans-serif',
+            courseFont: "'Jameel Noori Nastaleeq', Tahoma, sans-serif",
             courseFontSize: 36,
             courseAlignment: 'center',
             courseColor: '#000000',
@@ -154,16 +155,17 @@ const CertificateGenerator = () => {
     ctx.font = `${cfg[keys.fontSize]}px ${cfg[keys.font]}`;
     const textMetrics = ctx.measureText(keys.previewText);
     const textWidth = textMetrics.width;
-    const textHeight = cfg[keys.fontSize];
+    const ascent = textMetrics.actualBoundingBoxAscent || cfg[keys.fontSize] * 0.8;
+    const descent = textMetrics.actualBoundingBoxDescent || cfg[keys.fontSize] * 0.2;
     let textLeft = textPos.x;
-    let textTop = textPos.y;
+    const textTop = textPos.y - ascent;
     if (cfg[keys.alignment] === 'center') {
       textLeft = textPos.x - textWidth / 2;
     } else if (cfg[keys.alignment] === 'right') {
       textLeft = textPos.x - textWidth;
     }
     if (mouseX >= textLeft && mouseX <= textLeft + textWidth &&
-        mouseY >= textTop && mouseY <= textTop + textHeight) {
+        mouseY >= textTop && mouseY <= textPos.y + descent) {
       setIsDragging(true);
       setDragOffset({
         x: mouseX - textPos.x,
@@ -338,7 +340,7 @@ const CertificateGenerator = () => {
       if (!text) return;
       ctx.font = `${fontSize}px ${font}`;
       ctx.fillStyle = color;
-      ctx.textBaseline = 'top';
+      ctx.textBaseline = 'alphabetic';
       if (alignment === 'center') ctx.textAlign = 'center';
       else if (alignment === 'right') ctx.textAlign = 'right';
       else ctx.textAlign = 'left';
@@ -582,8 +584,8 @@ const CertificateGenerator = () => {
                     <button
                       onClick={() => {
                         updateConfig('language', 'ur');
-                        updateConfig('font', 'Tahoma, sans-serif');
-                        updateConfig('courseFont', 'Tahoma, sans-serif');
+                        updateConfig('font', "'Jameel Noori Nastaleeq', Tahoma, sans-serif");
+                        updateConfig('courseFont', "'Jameel Noori Nastaleeq', Tahoma, sans-serif");
                         setPreviewName('احمد علی');
                         setPreviewCourse('ویب ڈویلپمنٹ');
                       }}
@@ -634,7 +636,7 @@ const CertificateGenerator = () => {
                   </label>
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
                     <p className="text-sm text-blue-800 mb-1">
-                      <strong>Method 1:</strong> Click "Set Position" and click on preview
+                      <strong>Method 1:</strong> Click "Set Position", then click the underline — text sits on that line
                     </p>
                     <p className="text-sm text-blue-800">
                       <strong>Method 2:</strong> Drag the text directly on the preview
@@ -838,7 +840,7 @@ const CertificateGenerator = () => {
                 >
                   {isPositioning && (
                     <div className="absolute top-0 left-0 right-0 bg-green-500 text-white text-xs py-1 px-2 z-10 text-center">
-                      Click to set text position
+                      Click the line — text sits on it
                     </div>
                   )}
                   {!isPositioning && (

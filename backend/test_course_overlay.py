@@ -77,14 +77,49 @@ def test_draw_helper_writes_course_pixels():
     main_mod.draw_text_on_image(
         draw, "Math 101", 200, 150, 32, "center", "#000000", "en", font_dir
     )
-    # Near draw point should have ink (exact center can sit in a glyph gap / word space)
-    region = [img.getpixel((x, y)) for y in range(150, 175) for x in range(170, 230)]
+    # Near draw point should have ink
+    region = [img.getpixel((x, y)) for y in range(115, 175) for x in range(170, 230)]
     assert any(px != (255, 255, 255) for px in region), "expected course text to darken pixels near draw point"
+
+
+def test_urdu_uses_noori_nastaleeq_exactly():
+    import main as main_mod
+
+    font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    path = main_mod.resolve_font_path("ur", font_dir)
+    assert os.path.basename(path) == "Jameel Noori Nastaleeq.ttf"
+    assert os.path.getsize(path) > 100_000
+    with open(path, "rb") as f:
+        assert f.read(4) == b"\x00\x01\x00\x00"
+
+
+def test_text_sits_on_baseline_not_hanging_from_top():
+    from PIL import Image, ImageDraw
+    import main as main_mod
+
+    y = 150
+    img = Image.new("RGB", (400, 300), "white")
+    draw = ImageDraw.Draw(img)
+    font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    main_mod.draw_text_on_image(
+        draw, "Alice", 200, y, 40, "center", "#000000", "en", font_dir
+    )
+    above = sum(
+        1 for yy in range(y - 50, y) for xx in range(120, 280)
+        if img.getpixel((xx, yy)) != (255, 255, 255)
+    )
+    below = sum(
+        1 for yy in range(y + 1, y + 25) for xx in range(120, 280)
+        if img.getpixel((xx, yy)) != (255, 255, 255)
+    )
+    assert above > below * 2, f"text should sit on the line (ink above y), got above={above} below={below}"
 
 
 if __name__ == "__main__":
     test_create_and_get_includes_course_fields()
     test_get_fills_course_defaults_when_null()
     test_draw_helper_writes_course_pixels()
+    test_urdu_uses_noori_nastaleeq_exactly()
+    test_text_sits_on_baseline_not_hanging_from_top()
     print("OK: course DB checks passed")
     os.remove(_path)

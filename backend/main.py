@@ -54,49 +54,33 @@ class TemplateConfig(BaseModel):
     course_color: str | None = None
 
 
+NOORI_NASTALEEQ = "Jameel Noori Nastaleeq.ttf"
+
+
+def resolve_font_path(language: str, font_dir: str) -> str:
+    """Urdu certificates always use Jameel Noori Nastaleeq — no Tahoma/Arial fallback."""
+    if language == "ur":
+        path = os.path.join(font_dir, NOORI_NASTALEEQ)
+        if not os.path.isfile(path) or os.path.getsize(path) < 100_000:
+            raise FileNotFoundError(f"Jameel Noori Nastaleeq font missing or invalid: {path}")
+        return path
+    for name in ("ARIAL.TTF", "arial.ttf"):
+        path = os.path.join(font_dir, name)
+        if os.path.isfile(path):
+            return path
+    raise FileNotFoundError(f"No English font found in {font_dir}")
+
+
 def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, language, font_dir):
     if not text:
         return
 
-    font = None
-
-    # For Urdu: use Nastaliq fonts if libraqm available, otherwise use Tahoma
-    if language == 'ur':
-        if LIBRAQM_AVAILABLE:
-            # Use beautiful Nastaliq fonts with libraqm support
-            font_paths = [
-                os.path.join(font_dir, 'Jameel Noori Nastaleeq.ttf'),
-                os.path.join(font_dir, 'NotoNastaliqUrdu-Regular.ttf'),
-                'C:\\Windows\\Fonts\\tahoma.ttf',
-            ]
-        else:
-            # Use Tahoma (clean, professional, supports Arabic)
-            font_paths = [
-                'C:\\Windows\\Fonts\\tahoma.ttf',
-                'C:\\Windows\\Fonts\\tahomabd.ttf',  # Tahoma Bold
-                os.path.join(font_dir, 'ARIAL.TTF'),
-            ]
-    else:
-        font_paths = [
-            os.path.join(font_dir, 'ARIAL.TTF'),
-            os.path.join(font_dir, 'arial.ttf'),
-        ]
-
-    for path in font_paths:
-        if os.path.exists(path):
-            font = ImageFont.truetype(path, font_size)
-            try:
-                print(f"Using font: {os.path.basename(path)}")
-            except:
-                pass
-            break
-
-    if font is None:
-        font = ImageFont.load_default()
-        try:
-            print("Using default font (WARNING: may not support Urdu)")
-        except:
-            pass
+    font_path = resolve_font_path(language, font_dir)
+    font = ImageFont.truetype(font_path, font_size)
+    try:
+        print(f"Using font: {os.path.basename(font_path)}")
+    except Exception:
+        pass
 
     # For Urdu text processing with Tahoma font
     if language == 'ur' and URDU_SUPPORT:
@@ -107,7 +91,7 @@ def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, 
             display_text = get_display(reshaped)
 
             try:
-                print(f"Urdu text: reshaped and reversed with Tahoma")
+                print("Urdu text: reshaped for Jameel Noori Nastaleeq")
             except:
                 pass
         except Exception as e:
@@ -127,8 +111,9 @@ def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, 
     else:
         display_text = text
 
-    # Calculate text width for alignment
-    bbox = draw.textbbox((0, 0), display_text, font=font, anchor='la')
+    # ls = left + alphabetic baseline so a click on the certificate line
+    # sits the letters on that line (not hanging from the top of the em-box).
+    bbox = draw.textbbox((0, 0), display_text, font=font, anchor='ls')
     text_width = bbox[2] - bbox[0]
 
     draw_x = text_x
@@ -137,18 +122,14 @@ def draw_text_on_image(draw, text, text_x, text_y, font_size, alignment, color, 
     elif alignment == 'right':
         draw_x = text_x - text_width
 
-    # Draw text with proper rendering
     if language == 'ur' and LIBRAQM_AVAILABLE:
-        # Use PIL's advanced text rendering with libraqm
         try:
-            draw.text((draw_x, text_y), text, fill=color, font=font, anchor='la',
+            draw.text((draw_x, text_y), text, fill=color, font=font, anchor='ls',
                      direction='rtl', language='ur', features=['liga', 'calt', 'ccmp', 'locl'])
         except:
-            # Fallback if advanced features fail
-            draw.text((draw_x, text_y), display_text, fill=color, font=font, anchor='la')
+            draw.text((draw_x, text_y), display_text, fill=color, font=font, anchor='ls')
     else:
-        # Simple drawing (for Tahoma with reshaped text)
-        draw.text((draw_x, text_y), display_text, fill=color, font=font, anchor='la')
+        draw.text((draw_x, text_y), display_text, fill=color, font=font, anchor='ls')
 
 
 @app.get("/")
@@ -159,7 +140,7 @@ async def root():
         "message": "Certificate API",
         "urdu_support": URDU_SUPPORT,
         "libraqm_available": LIBRAQM_AVAILABLE,
-        "urdu_font": "Nastaliq" if LIBRAQM_AVAILABLE else "Tahoma",
+        "urdu_font": "Jameel Noori Nastaleeq",
         "templates_count": count,
         "database": db_info["type"]
     }
