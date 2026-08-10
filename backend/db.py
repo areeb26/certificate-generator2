@@ -26,6 +26,32 @@ except ImportError:
         print("Falling back to SQLite")
         DATABASE_TYPE = 'sqlite'
 
+COURSE_COLUMNS = [
+    ("course_text_x", "REAL"),
+    ("course_text_y", "REAL"),
+    ("course_font", "TEXT"),
+    ("course_font_size", "INTEGER"),
+    ("course_alignment", "TEXT"),
+    ("course_color", "TEXT"),
+]
+
+
+def _with_course_defaults(row_dict):
+    name_y = row_dict["text_y"]
+    if row_dict.get("course_text_x") is None:
+        row_dict["course_text_x"] = row_dict["text_x"]
+    if row_dict.get("course_text_y") is None:
+        row_dict["course_text_y"] = name_y + 60
+    if row_dict.get("course_font") is None:
+        row_dict["course_font"] = row_dict["font"]
+    if row_dict.get("course_font_size") is None:
+        row_dict["course_font_size"] = row_dict["font_size"]
+    if row_dict.get("course_alignment") is None:
+        row_dict["course_alignment"] = row_dict["alignment"]
+    if row_dict.get("course_color") is None:
+        row_dict["course_color"] = row_dict["color"]
+    return row_dict
+
 
 class Database:
     """Database abstraction layer"""
@@ -126,6 +152,12 @@ class Database:
                     alignment TEXT NOT NULL,
                     color TEXT NOT NULL,
                     language TEXT NOT NULL,
+                    course_text_x REAL,
+                    course_text_y REAL,
+                    course_font TEXT,
+                    course_font_size INTEGER,
+                    course_alignment TEXT,
+                    course_color TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''
@@ -142,15 +174,36 @@ class Database:
                     alignment TEXT NOT NULL,
                     color TEXT NOT NULL,
                     language TEXT NOT NULL,
+                    course_text_x REAL,
+                    course_text_y REAL,
+                    course_font TEXT,
+                    course_font_size INTEGER,
+                    course_alignment TEXT,
+                    course_color TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             '''
 
         try:
             self.commit_query(create_table_sql)
+            self._ensure_course_columns()
             print(f"[OK] Database initialized ({self.db_type})")
         except Exception as e:
             print(f"ERROR: Failed to initialize database: {e}")
+
+    def _ensure_course_columns(self):
+        existing = set()
+        if self.db_type == "postgresql":
+            rows = self.fetchall(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'templates'"
+            )
+            existing = {r[0] for r in rows}
+        else:
+            rows = self.fetchall("PRAGMA table_info(templates)")
+            existing = {r[1] for r in rows}
+        for col, typ in COURSE_COLUMNS:
+            if col not in existing:
+                self.commit_query(f"ALTER TABLE templates ADD COLUMN {col} {typ}")
 
     def get_database_info(self) -> dict:
         """Get information about current database"""
@@ -175,24 +228,31 @@ class TemplateDB:
         self.db = db
 
     def create_template(self, name: str, image_base64: str, text_x: float, text_y: float,
-                       font: str, font_size: int, alignment: str, color: str, language: str) -> int:
+                       font: str, font_size: int, alignment: str, color: str, language: str,
+                       course_text_x: float = None, course_text_y: float = None,
+                       course_font: str = None, course_font_size: int = None,
+                       course_alignment: str = None, course_color: str = None) -> int:
         """Create a new template"""
+        params = (name, image_base64, text_x, text_y, font, font_size, alignment, color, language,
+                  course_text_x, course_text_y, course_font, course_font_size, course_alignment, course_color)
         if self.db.db_type == 'postgresql':
             query = '''
-                INSERT INTO templates (name, image_base64, text_x, text_y, font, font_size, alignment, color, language)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO templates (name, image_base64, text_x, text_y, font, font_size, alignment, color, language,
+                                       course_text_x, course_text_y, course_font, course_font_size, course_alignment, course_color)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             '''
-            cursor, conn = self.db.execute(query, (name, image_base64, text_x, text_y, font, font_size, alignment, color, language))
+            cursor, conn = self.db.execute(query, params)
             template_id = cursor.fetchone()[0]
             conn.commit()
             return template_id
         else:
             query = '''
-                INSERT INTO templates (name, image_base64, text_x, text_y, font, font_size, alignment, color, language)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO templates (name, image_base64, text_x, text_y, font, font_size, alignment, color, language,
+                                       course_text_x, course_text_y, course_font, course_font_size, course_alignment, course_color)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             '''
-            return self.db.insert(query, (name, image_base64, text_x, text_y, font, font_size, alignment, color, language))
+            return self.db.insert(query, params)
 
     def get_template_count(self) -> int:
         """Get total number of templates"""
@@ -206,10 +266,15 @@ class TemplateDB:
 
     def get_template(self, template_id: int) -> Optional[dict]:
         """Get full template details"""
-        result = self.db.fetchone('SELECT * FROM templates WHERE id = ?', (template_id,))
+        result = self.db.fetchone(
+            '''SELECT id, name, image_base64, text_x, text_y, font, font_size, alignment, color, language,
+                      course_text_x, course_text_y, course_font, course_font_size, course_alignment, course_color
+               FROM templates WHERE id = ?''',
+            (template_id,),
+        )
         if not result:
             return None
-        return {
+        row_dict = {
             "id": result[0],
             "name": result[1],
             "image_base64": result[2],
@@ -219,8 +284,15 @@ class TemplateDB:
             "font_size": result[6],
             "alignment": result[7],
             "color": result[8],
-            "language": result[9]
+            "language": result[9],
+            "course_text_x": result[10],
+            "course_text_y": result[11],
+            "course_font": result[12],
+            "course_font_size": result[13],
+            "course_alignment": result[14],
+            "course_color": result[15],
         }
+        return _with_course_defaults(row_dict)
 
     def delete_template(self, template_id: int) -> bool:
         """Delete a template"""

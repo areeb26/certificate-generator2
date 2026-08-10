@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS templates (
     alignment TEXT NOT NULL,
     color TEXT NOT NULL,
     language TEXT NOT NULL,
+    course_text_x REAL,
+    course_text_y REAL,
+    course_font TEXT,
+    course_font_size INTEGER,
+    course_alignment TEXT,
+    course_color TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -80,6 +86,21 @@ CREATE POLICY "Allow all operations on templates" ON templates
 
 4. Click "Run" or press `Ctrl+Enter`
 5. You should see "Success. No rows returned"
+
+### Existing projects (add course overlay columns)
+
+If you already created the `templates` table before course overlay support, run this once in the SQL Editor:
+
+```sql
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS course_text_x REAL;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS course_text_y REAL;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS course_font TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS course_font_size INTEGER;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS course_alignment TEXT;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS course_color TEXT;
+```
+
+(Postgres 9.x lacks `IF NOT EXISTS` on `ADD COLUMN` — run each ALTER once and ignore duplicate-column errors.)
 
 ## Step 5: Configure Your Application
 
