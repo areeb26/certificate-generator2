@@ -148,6 +148,48 @@ def test_postgres_execute_rolls_back_on_error():
         db_mod.db.get_connection = orig_get
 
 
+def test_update_persists_course_position():
+    tid = db_mod.template_db.create_template(
+        name="upd",
+        image_base64="data:image/png;base64,aaa",
+        text_x=100,
+        text_y=80,
+        font="Arial",
+        font_size=40,
+        alignment="center",
+        color="#000000",
+        language="en",
+    )
+    ok = db_mod.template_db.update_template(
+        tid, course_text_x=360, course_text_y=365, course_font_size=32,
+    )
+    assert ok
+    t = db_mod.template_db.get_template(tid)
+    assert t["course_text_x"] == 360
+    assert t["course_text_y"] == 365
+    assert t["course_font_size"] == 32
+
+
+def test_put_template_route_exists():
+    import main as main_mod
+    found = False
+    for r in main_mod.app.routes:
+        if getattr(r, "path", None) != "/api/template/{template_id}":
+            continue
+        methods = getattr(r, "methods", None) or set()
+        if "PUT" in methods:
+            found = True
+            break
+    assert found, "PUT /api/template/{id} required so the editor can save course position in place"
+
+
+def test_n8n_underscore_with_course_route_exists():
+    import main as main_mod
+    paths = {getattr(r, "path", None) for r in main_mod.app.routes}
+    assert "/api/certificate-with-course/{template_id}" in paths
+    assert "/api/certificate_with_course/{template_id}" in paths
+
+
 def test_render_png_matches_generate_overlays():
     """Editor preview and n8n must share one renderer (name + course ink)."""
     import base64
@@ -177,6 +219,9 @@ def test_render_png_matches_generate_overlays():
 if __name__ == "__main__":
     test_create_and_get_includes_course_fields()
     test_get_fills_course_defaults_when_null()
+    test_update_persists_course_position()
+    test_put_template_route_exists()
+    test_n8n_underscore_with_course_route_exists()
     test_draw_helper_writes_course_pixels()
     test_urdu_uses_noori_nastaleeq_exactly()
     test_text_sits_on_baseline_not_hanging_from_top()
